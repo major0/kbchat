@@ -144,13 +144,14 @@ func (c *Client) ReadConversation(convID string, known func(int) bool) ([]MsgSum
 }
 
 // DownloadAttachment downloads an attachment to outPath using a separate
-// "keybase chat download" invocation.
-func (c *Client) DownloadAttachment(convID string, msgID int, outPath string) error {
-	cmd := exec.Command("keybase", "chat", "download",
-		"--conversation-id", convID,
-		"--message-id", fmt.Sprintf("%d", msgID),
-		"--output", outPath,
-	)
+// "keybase chat download" invocation. For team channels, --channel specifies
+// the topic name.
+func (c *Client) DownloadAttachment(channel ChatChannel, msgID int, outPath string) error {
+	args := []string{"chat", "download", channel.Name, fmt.Sprintf("%d", msgID), "-o", outPath}
+	if channel.MembersType == "team" && channel.TopicName != "" {
+		args = append(args, "--channel", channel.TopicName)
+	}
+	cmd := exec.Command("keybase", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

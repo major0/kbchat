@@ -31,7 +31,7 @@ func (m *mockClient) ReadConversation(convID string, known func(int) bool) ([]ke
 	return result, nil
 }
 
-func (m *mockClient) DownloadAttachment(convID string, msgID int, outPath string) error {
+func (m *mockClient) DownloadAttachment(channel keybase.ChatChannel, msgID int, outPath string) error {
 	m.dlCalled++
 	if m.dlErr != nil {
 		return m.dlErr

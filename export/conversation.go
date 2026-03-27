@@ -20,7 +20,7 @@ type Result struct {
 // ClientAPI abstracts the keybase.Client methods used by ExportConversation.
 type ClientAPI interface {
 	ReadConversation(convID string, known func(int) bool) ([]keybase.MsgSummary, error)
-	DownloadAttachment(convID string, msgID int, outPath string) error
+	DownloadAttachment(channel keybase.ChatChannel, msgID int, outPath string) error
 	Close() error
 }
 
@@ -90,7 +90,7 @@ func ExportConversation(
 		if filename == "" {
 			continue
 		}
-		ref, err := DownloadAttachment(client, conv.ID, msg.ID, filename, attachDir)
+		ref, err := DownloadAttachment(client, conv.Channel, msg.ID, filename, attachDir)
 		if err != nil {
 			if verbose {
 				log.Printf("attachment download failed (conv=%s msg=%d): %v", conv.ID, msg.ID, err)

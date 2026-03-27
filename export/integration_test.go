@@ -56,8 +56,8 @@ func (c *integrationClient) ReadConversation(convID string, known func(int) bool
 	return result, nil
 }
 
-func (c *integrationClient) DownloadAttachment(convID string, msgID int, outPath string) error {
-	return os.WriteFile(outPath, []byte(fmt.Sprintf("attachment-%s-%d", convID, msgID)), 0644)
+func (c *integrationClient) DownloadAttachment(channel keybase.ChatChannel, msgID int, outPath string) error {
+	return os.WriteFile(outPath, []byte(fmt.Sprintf("attachment-%s-%d", channel.Name, msgID)), 0644)
 }
 
 func (c *integrationClient) Close() error { return nil }
