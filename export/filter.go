@@ -46,5 +46,6 @@ func matchesFilter(path, filter string) bool {
 		normalized = "Teams/" + filter[len("Team/"):]
 	}
 
-	return strings.HasPrefix(path, normalized)
+	// Exact match or match with trailing separator (for team channels)
+	return path == normalized || strings.HasPrefix(path, normalized+"/")
 }
