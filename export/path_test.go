@@ -146,6 +146,17 @@ func TestConvDirPath_EdgeCases(t *testing.T) {
 			selfUser: "alice",
 			want:     filepath.Join("/export", "Teams", "engineering", "general"),
 		},
+		{
+			name: "self-chat uses own username",
+			conv: keybase.ConvSummary{
+				Channel: keybase.ChatChannel{
+					Name:        "alice",
+					MembersType: "impteamnative",
+				},
+			},
+			selfUser: "alice",
+			want:     filepath.Join("/export", "Chats", "alice"),
+		},
 	}
 
 	for _, tt := range tests {

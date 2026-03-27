@@ -28,6 +28,10 @@ func ConvDirPath(destDir string, conv keybase.ConvSummary, selfUsername string) 
 			}
 		}
 		sort.Strings(filtered)
-		return filepath.Join(destDir, "Chats", strings.Join(filtered, ","))
+		name := strings.Join(filtered, ",")
+		if name == "" {
+			name = selfUsername // self-chat
+		}
+		return filepath.Join(destDir, "Chats", name)
 	}
 }
