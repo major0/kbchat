@@ -123,7 +123,9 @@ func TestReadHead_Missing(t *testing.T) {
 
 func TestReadHead_Corrupt(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "head"), []byte("not-a-number\n"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "head"), []byte("not-a-number\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	head, err := ReadHead(dir)
 	if err != nil {
 		t.Fatal(err)

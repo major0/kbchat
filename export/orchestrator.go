@@ -15,7 +15,7 @@ type Config struct {
 	Parallel        int
 	Verbose         bool
 	SkipAttachments bool
-	SelfUsername     string
+	SelfUsername    string
 }
 
 // Summary holds aggregate export results.

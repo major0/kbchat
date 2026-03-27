@@ -145,7 +145,7 @@ func main() {
 		Parallel:        cfg.Parallel,
 		Verbose:         cfg.Verbose,
 		SkipAttachments: cfg.SkipAttachments,
-		SelfUsername:     selfUsername,
+		SelfUsername:    selfUsername,
 	}
 
 	listClient, err := keybase.NewClient()

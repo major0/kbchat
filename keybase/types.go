@@ -123,9 +123,9 @@ type ReactionContent struct {
 
 // AttachmentContent holds an attachment message.
 type AttachmentContent struct {
-	Object   AttachmentObject `json:"object"`
+	Object   AttachmentObject  `json:"object"`
 	Preview  *AttachmentObject `json:"preview,omitempty"`
-	Uploaded bool             `json:"uploaded"`
+	Uploaded bool              `json:"uploaded"`
 }
 
 // AttachmentObject describes an attachment file.
@@ -137,8 +137,8 @@ type AttachmentObject struct {
 
 // AttachmentUploaded holds an attachment_uploaded message.
 type AttachmentUploaded struct {
-	MessageID int              `json:"messageID"`
-	Object    AttachmentObject `json:"object"`
+	MessageID int                `json:"messageID"`
+	Object    AttachmentObject   `json:"object"`
 	Previews  []AttachmentObject `json:"previews,omitempty"`
 }
 
@@ -164,7 +164,7 @@ type Pagination struct {
 
 // ChatListResult wraps the list API response.
 type ChatListResult struct {
-	Result ChatList `json:"result"`
+	Result ChatList  `json:"result"`
 	Error  *APIError `json:"error,omitempty"`
 }
 
@@ -176,7 +176,7 @@ type ChatList struct {
 
 // ReadResult wraps the read API response.
 type ReadResult struct {
-	Result Thread   `json:"result"`
+	Result Thread    `json:"result"`
 	Error  *APIError `json:"error,omitempty"`
 }
 
@@ -202,7 +202,7 @@ type APIError struct {
 type ConvType int
 
 const (
-	ConvDM    ConvType = iota
+	ConvDM ConvType = iota
 	ConvGroup
 	ConvTeam
 )

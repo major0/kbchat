@@ -42,7 +42,10 @@ func TestPropertyContentAddressableStorage(t *testing.T) {
 		for _, in := range inputs {
 			// Write content to a temp file, hash it, store it
 			tmpPath := filepath.Join(dir, "tmp")
-			os.WriteFile(tmpPath, in.content, 0644)
+			if err := os.WriteFile(tmpPath, in.content, 0644); err != nil {
+				t.Logf("write temp: %v", err)
+				return false
+			}
 
 			hash, err := HashFile(tmpPath)
 			if err != nil {
@@ -53,7 +56,10 @@ func TestPropertyContentAddressableStorage(t *testing.T) {
 			destPath := filepath.Join(dir, ref)
 
 			if _, err := os.Stat(destPath); err != nil {
-				os.Rename(tmpPath, destPath)
+				if err := os.Rename(tmpPath, destPath); err != nil {
+					t.Logf("rename: %v", err)
+					return false
+				}
 			} else {
 				os.Remove(tmpPath)
 			}
@@ -137,7 +143,9 @@ func TestHashFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")
 	content := []byte("hello world")
-	os.WriteFile(path, content, 0644)
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	got, err := HashFile(path)
 	if err != nil {
@@ -159,7 +167,9 @@ func TestSameContentDifferentFilename(t *testing.T) {
 
 	// Store as photo.jpg
 	ref1 := StorageRef(hash, "photo.jpg")
-	os.WriteFile(filepath.Join(dir, ref1), content, 0644)
+	if err := os.WriteFile(filepath.Join(dir, ref1), content, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Store as image.jpg — same hash, same ext → same file
 	ref2 := StorageRef(hash, "image.jpg")
