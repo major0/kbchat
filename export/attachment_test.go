@@ -2,6 +2,8 @@ package export
 
 import (
 	"math/rand"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/quick"
 )
@@ -82,5 +84,37 @@ func TestDeduplicateFilename_MultipleCollisions(t *testing.T) {
 		if results[i] != want[i] {
 			t.Errorf("index %d: got %q, want %q", i, results[i], want[i])
 		}
+	}
+}
+
+func TestFilesEqual_IdenticalContent(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.txt")
+	b := filepath.Join(dir, "b.txt")
+	os.WriteFile(a, []byte("hello world"), 0644)
+	os.WriteFile(b, []byte("hello world"), 0644)
+
+	equal, err := filesEqual(a, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !equal {
+		t.Error("expected files to be equal")
+	}
+}
+
+func TestFilesEqual_DifferentContent(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.txt")
+	b := filepath.Join(dir, "b.txt")
+	os.WriteFile(a, []byte("hello"), 0644)
+	os.WriteFile(b, []byte("world"), 0644)
+
+	equal, err := filesEqual(a, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if equal {
+		t.Error("expected files to be different")
 	}
 }
