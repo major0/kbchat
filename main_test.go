@@ -1,183 +1,146 @@
 package main
 
 import (
+	"errors"
 	"testing"
 )
 
 func TestParseArgs(t *testing.T) {
 	tests := []struct {
-		name            string
-		args            []string
-		wantErr         bool
-		errContains     string
-		wantDestDir     string
-		wantFilters     []string
-		wantParallel    int
-		wantVerbose     bool
-		wantSkipAttach  bool
+		name    string
+		args    []string
+		want    *Config
+		wantErr string
 	}{
 		{
-			name:         "destdir only",
-			args:         []string{"/tmp/out"},
-			wantDestDir:  "/tmp/out",
-			wantParallel: 4,
+			name: "destdir only",
+			args: []string{"/tmp/export"},
+			want: &Config{DestDir: "/tmp/export", Parallel: 4},
 		},
 		{
-			name:         "destdir with filters",
-			args:         []string{"/tmp/out", "Chat/alice,bob", "Team/myteam"},
-			wantDestDir:  "/tmp/out",
-			wantFilters:  []string{"Chat/alice,bob", "Team/myteam"},
-			wantParallel: 4,
+			name: "destdir with filters",
+			args: []string{"/tmp/export", "Chat/alice,bob", "Team/myteam"},
+			want: &Config{
+				DestDir:  "/tmp/export",
+				Filters:  []string{"Chat/alice,bob", "Team/myteam"},
+				Parallel: 4,
+			},
 		},
 		{
-			name:         "parallel short flag",
-			args:         []string{"-P", "8", "/tmp/out"},
-			wantDestDir:  "/tmp/out",
-			wantParallel: 8,
+			name: "parallel short flag",
+			args: []string{"-P", "8", "/tmp/export"},
+			want: &Config{DestDir: "/tmp/export", Parallel: 8},
 		},
 		{
-			name:         "parallel long flag",
-			args:         []string{"--parallel=16", "/tmp/out"},
-			wantDestDir:  "/tmp/out",
-			wantParallel: 16,
+			name: "parallel long flag",
+			args: []string{"--parallel=16", "/tmp/export"},
+			want: &Config{DestDir: "/tmp/export", Parallel: 16},
 		},
 		{
-			name:         "default parallel is 4",
-			args:         []string{"/tmp/out"},
-			wantDestDir:  "/tmp/out",
-			wantParallel: 4,
+			name: "default parallel is 4",
+			args: []string{"/tmp/export"},
+			want: &Config{DestDir: "/tmp/export", Parallel: 4},
 		},
 		{
-			name:        "verbose flag",
-			args:        []string{"--verbose", "/tmp/out"},
-			wantDestDir: "/tmp/out",
-			wantVerbose: true,
-			wantParallel: 4,
+			name: "verbose flag",
+			args: []string{"--verbose", "/tmp/export"},
+			want: &Config{DestDir: "/tmp/export", Parallel: 4, Verbose: true},
 		},
 		{
-			name:           "skip-attachments flag",
-			args:           []string{"--skip-attachments", "/tmp/out"},
-			wantDestDir:    "/tmp/out",
-			wantSkipAttach: true,
-			wantParallel:   4,
+			name: "skip-attachments flag",
+			args: []string{"--skip-attachments", "/tmp/export"},
+			want: &Config{DestDir: "/tmp/export", Parallel: 4, SkipAttachments: true},
 		},
 		{
-			name:           "all flags combined",
-			args:           []string{"--verbose", "--skip-attachments", "-P", "2", "/tmp/out", "Chat/alice"},
-			wantDestDir:    "/tmp/out",
-			wantFilters:    []string{"Chat/alice"},
-			wantParallel:   2,
-			wantVerbose:    true,
-			wantSkipAttach: true,
+			name: "all flags combined",
+			args: []string{"--verbose", "--skip-attachments", "-P", "2", "/tmp/export", "Chat/alice"},
+			want: &Config{
+				DestDir:         "/tmp/export",
+				Filters:         []string{"Chat/alice"},
+				Parallel:        2,
+				Verbose:         true,
+				SkipAttachments: true,
+			},
 		},
 		{
-			name:        "help short",
-			args:        []string{"-h"},
-			wantErr:     true,
-			errContains: "help requested",
+			name:    "missing destdir",
+			args:    []string{},
+			wantErr: "destdir is required",
 		},
 		{
-			name:        "help long",
-			args:        []string{"--help"},
-			wantErr:     true,
-			errContains: "help requested",
+			name:    "help flag",
+			args:    []string{"--help"},
+			wantErr: "help",
 		},
 		{
-			name:        "missing destdir",
-			args:        []string{},
-			wantErr:     true,
-			errContains: "missing required argument",
+			name:    "short help flag",
+			args:    []string{"-h"},
+			wantErr: "help",
 		},
 		{
-			name:        "missing destdir with flags only",
-			args:        []string{"--verbose"},
-			wantErr:     true,
-			errContains: "missing required argument",
+			name:    "unknown flag",
+			args:    []string{"--unknown", "/tmp/export"},
+			wantErr: "unknown flag: --unknown",
 		},
 		{
-			name:        "unknown flag",
-			args:        []string{"--bogus", "/tmp/out"},
-			wantErr:     true,
-			errContains: "unknown flag",
+			name:    "parallel missing value",
+			args:    []string{"-P"},
+			wantErr: "-P requires a value",
 		},
 		{
-			name:        "-P missing value",
-			args:        []string{"-P"},
-			wantErr:     true,
-			errContains: "-P requires a value",
+			name:    "parallel invalid value",
+			args:    []string{"-P", "abc", "/tmp/export"},
+			wantErr: "invalid parallel value: abc",
 		},
 		{
-			name:        "-P invalid number",
-			args:        []string{"-P", "abc", "/tmp/out"},
-			wantErr:     true,
-			errContains: "invalid number",
-		},
-		{
-			name:        "--parallel invalid number",
-			args:        []string{"--parallel=abc", "/tmp/out"},
-			wantErr:     true,
-			errContains: "invalid number",
+			name:    "parallel zero",
+			args:    []string{"-P", "0", "/tmp/export"},
+			wantErr: "invalid parallel value: 0",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := ParseArgs(tt.args)
-			if tt.wantErr {
+			got, err := parseArgs(tt.args)
+			if tt.wantErr != "" {
 				if err == nil {
-					t.Fatal("expected error, got nil")
+					t.Fatalf("expected error %q, got nil", tt.wantErr)
 				}
-				if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
-					t.Fatalf("error %q does not contain %q", err.Error(), tt.errContains)
+				if tt.wantErr == "help" {
+					if !errors.Is(err, errHelp) {
+						t.Fatalf("expected errHelp, got %q", err.Error())
+					}
+					return
+				}
+				if err.Error() != tt.wantErr {
+					t.Fatalf("expected error %q, got %q", tt.wantErr, err.Error())
 				}
 				return
 			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cfg.DestDir != tt.wantDestDir {
-				t.Errorf("DestDir = %q, want %q", cfg.DestDir, tt.wantDestDir)
+			if got.DestDir != tt.want.DestDir {
+				t.Errorf("DestDir = %q, want %q", got.DestDir, tt.want.DestDir)
 			}
-			if !sliceEqual(cfg.Filters, tt.wantFilters) {
-				t.Errorf("Filters = %v, want %v", cfg.Filters, tt.wantFilters)
+			if got.Parallel != tt.want.Parallel {
+				t.Errorf("Parallel = %d, want %d", got.Parallel, tt.want.Parallel)
 			}
-			if cfg.Parallel != tt.wantParallel {
-				t.Errorf("Parallel = %d, want %d", cfg.Parallel, tt.wantParallel)
+			if got.Verbose != tt.want.Verbose {
+				t.Errorf("Verbose = %v, want %v", got.Verbose, tt.want.Verbose)
 			}
-			if cfg.Verbose != tt.wantVerbose {
-				t.Errorf("Verbose = %v, want %v", cfg.Verbose, tt.wantVerbose)
+			if got.SkipAttachments != tt.want.SkipAttachments {
+				t.Errorf("SkipAttachments = %v, want %v", got.SkipAttachments, tt.want.SkipAttachments)
 			}
-			if cfg.SkipAttachments != tt.wantSkipAttach {
-				t.Errorf("SkipAttachments = %v, want %v", cfg.SkipAttachments, tt.wantSkipAttach)
+			if len(got.Filters) != len(tt.want.Filters) {
+				t.Errorf("Filters len = %d, want %d", len(got.Filters), len(tt.want.Filters))
+			} else {
+				for i := range got.Filters {
+					if got.Filters[i] != tt.want.Filters[i] {
+						t.Errorf("Filters[%d] = %q, want %q", i, got.Filters[i], tt.want.Filters[i])
+					}
+				}
 			}
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
-func sliceEqual(a, b []string) bool {
-	if len(a) == 0 && len(b) == 0 {
-		return true
-	}
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
