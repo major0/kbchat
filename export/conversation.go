@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/major0/keybase-export/keybase"
 )
@@ -18,15 +17,13 @@ type Result struct {
 	Errors                []error
 }
 
-// ClientAPI abstracts the keybase.Client methods used by ExportConversation,
-// enabling test mocks.
+// ClientAPI abstracts the keybase.Client methods used by ExportConversation.
 type ClientAPI interface {
-	ReadConversation(convID string, sinceTimestamp *int64) ([]keybase.MsgSummary, error)
+	ReadConversation(convID string, known func(int) bool) ([]keybase.MsgSummary, error)
 	DownloadAttachment(convID string, msgID int, outPath string) error
 }
 
-// ExportConversation exports a single conversation: creates directories,
-// fetches messages, writes messages.json, downloads attachments, updates timestamp.
+// ExportConversation exports a single conversation using per-message directories.
 func ExportConversation(
 	client ClientAPI,
 	conv keybase.ConvSummary,
@@ -39,21 +36,19 @@ func ExportConversation(
 
 	convDir := ConvDirPath(destDir, conv, selfUsername)
 	attachDir := filepath.Join(convDir, "attachments")
+	msgsDir := filepath.Join(convDir, "messages")
 	if err := os.MkdirAll(attachDir, 0755); err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("create dirs: %w", err))
 		return result
 	}
-
-	// Read existing timestamp for incremental export
-	tsPath := filepath.Join(convDir, ".timestamp")
-	ts, _ := ReadTimestamp(tsPath)
-	var sinceTs *int64
-	if ts > 0 {
-		sinceTs = &ts
+	if err := os.MkdirAll(msgsDir, 0755); err != nil {
+		result.Errors = append(result.Errors, fmt.Errorf("create dirs: %w", err))
+		return result
 	}
 
-	// Fetch messages
-	msgs, err := client.ReadConversation(conv.ID, sinceTs)
+	// Fetch messages, stopping when we hit a known message ID
+	known := func(id int) bool { return MsgExists(convDir, id) }
+	msgs, err := client.ReadConversation(conv.ID, known)
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("read conversation: %w", err))
 		return result
@@ -63,53 +58,59 @@ func ExportConversation(
 		return result
 	}
 
-	// Sort chronologically
-	sort.Slice(msgs, func(i, j int) bool {
-		return msgs[i].SentAtMs < msgs[j].SentAtMs
-	})
+	// Write each message to its own directory
+	var newestID int
+	for _, msg := range msgs {
+		if err := WriteMsg(convDir, msg); err != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("write msg %d: %w", msg.ID, err))
+			continue
+		}
+		result.MessagesExported++
 
-	// Write messages.json
-	msgPath := filepath.Join(convDir, "messages.json")
-	if err := WriteMessages(msgPath, msgs); err != nil {
-		result.Errors = append(result.Errors, fmt.Errorf("write messages: %w", err))
-		return result
-	}
-	result.MessagesExported = len(msgs)
+		// Track newest message for head update
+		if msg.ID > newestID {
+			newestID = msg.ID
+		}
 
-	// Download attachments
-	if !skipAttachments {
-		var refs []AttachmentRef
-		for _, msg := range msgs {
-			if msg.Content.Type != "attachment" || msg.Content.Attachment == nil {
-				continue
+		// Detect orphaned prev pointers (chain gaps from upstream deletions)
+		var orphans []keybase.Prev
+		for _, p := range msg.Prev {
+			if !MsgExists(convDir, p.ID) {
+				orphans = append(orphans, p)
 			}
+		}
+		if len(orphans) > 0 {
+			if err := WriteOrphans(convDir, msg.ID, orphans); err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("write orphans %d: %w", msg.ID, err))
+			}
+		}
+
+		// Download attachments for this message
+		if !skipAttachments && msg.Content.Type == "attachment" && msg.Content.Attachment != nil {
 			filename := msg.Content.Attachment.Object.Filename
-			if filename == "" {
-				continue
-			}
-			ref, err := DownloadAttachment(client, conv.ID, msg.ID, filename, attachDir)
-			if err != nil {
-				if verbose {
-					log.Printf("attachment download failed (conv=%s msg=%d): %v", conv.ID, msg.ID, err)
+			if filename != "" {
+				ref, err := DownloadAttachment(client, conv.ID, msg.ID, filename, attachDir)
+				if err != nil {
+					if verbose {
+						log.Printf("attachment download failed (conv=%s msg=%d): %v", conv.ID, msg.ID, err)
+					}
+					result.Errors = append(result.Errors, err)
+				} else {
+					if err := WriteMsgAttachments(convDir, msg.ID, []AttachmentRef{*ref}); err != nil {
+						result.Errors = append(result.Errors, fmt.Errorf("write msg attachments %d: %w", msg.ID, err))
+					}
+					result.AttachmentsDownloaded++
 				}
-				result.Errors = append(result.Errors, err)
-				continue
-			}
-			refs = append(refs, *ref)
-			result.AttachmentsDownloaded++
-		}
-		if len(refs) > 0 {
-			manifestPath := filepath.Join(convDir, "attachments.json")
-			if err := WriteAttachmentManifest(manifestPath, refs); err != nil {
-				result.Errors = append(result.Errors, fmt.Errorf("write manifest: %w", err))
 			}
 		}
 	}
 
-	// Update timestamp to the latest message
-	latestTs := msgs[len(msgs)-1].SentAtMs
-	if err := WriteTimestampAtomic(tsPath, latestTs); err != nil {
-		result.Errors = append(result.Errors, fmt.Errorf("write timestamp: %w", err))
+	// Update head to newest message
+	oldHead, _ := ReadHead(convDir)
+	if newestID > oldHead {
+		if err := WriteHead(convDir, newestID); err != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("write head: %w", err))
+		}
 	}
 
 	return result

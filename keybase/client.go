@@ -88,9 +88,11 @@ type readOptions struct {
 	Pagination     *Pagination `json:"pagination,omitempty"`
 }
 
-// ReadConversation reads all messages from a conversation, handling pagination.
-// If sinceTimestamp is non-nil, only messages newer than that timestamp are returned.
-func (c *Client) ReadConversation(convID string, sinceTimestamp *int64) ([]MsgSummary, error) {
+// ReadConversation reads messages from a conversation, handling pagination.
+// The known function is called for each message ID; if it returns true,
+// pagination stops (the message already exists locally). Messages are
+// returned newest-first as received from the API.
+func (c *Client) ReadConversation(convID string, known func(int) bool) ([]MsgSummary, error) {
 	var allMsgs []MsgSummary
 	var next string
 
@@ -115,14 +117,19 @@ func (c *Client) ReadConversation(convID string, sinceTimestamp *int64) ([]MsgSu
 			return nil, fmt.Errorf("keybase API error: %s", resp.Error.Message)
 		}
 
+		hitKnown := false
 		for _, m := range resp.Result.Messages {
 			if m.Msg == nil {
 				continue
 			}
-			if sinceTimestamp != nil && m.Msg.SentAtMs <= *sinceTimestamp {
-				return allMsgs, nil
+			if known != nil && known(m.Msg.ID) {
+				hitKnown = true
+				break
 			}
 			allMsgs = append(allMsgs, *m.Msg)
+		}
+		if hitKnown {
+			break
 		}
 
 		if resp.Result.Pagination == nil || resp.Result.Pagination.Last {

@@ -39,7 +39,7 @@ func TestPropertyContentAddressableStorage(t *testing.T) {
 
 		// Store each attachment
 		var refs []AttachmentRef
-		for i, in := range inputs {
+		for _, in := range inputs {
 			// Write content to a temp file, hash it, store it
 			tmpPath := filepath.Join(dir, "tmp")
 			os.WriteFile(tmpPath, in.content, 0644)
@@ -59,7 +59,6 @@ func TestPropertyContentAddressableStorage(t *testing.T) {
 			}
 
 			refs = append(refs, AttachmentRef{
-				MsgID:      i + 1,
 				Filename:   in.filename,
 				StorageRef: ref,
 			})
@@ -195,8 +194,8 @@ func TestManifestRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "attachments.json")
 
 	refs := []AttachmentRef{
-		{MsgID: 1, Filename: "photo.jpg", StorageRef: "abc123.jpg"},
-		{MsgID: 5, Filename: "doc.pdf", StorageRef: "def456.pdf"},
+		{Filename: "photo.jpg", StorageRef: "abc123.jpg"},
+		{Filename: "doc.pdf", StorageRef: "def456.pdf"},
 	}
 
 	if err := WriteAttachmentManifest(path, refs); err != nil {

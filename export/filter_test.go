@@ -8,63 +8,6 @@ import (
 	"github.com/major0/keybase-export/keybase"
 )
 
-// Feature: keybase-go-export, Property 8: Incremental export filters by timestamp
-func TestPropertyIncrementalTimestampFilter(t *testing.T) {
-	f := func(seed int64) bool {
-		r := rand.New(rand.NewSource(seed))
-		n := r.Intn(20) + 1
-		cutoff := r.Int63n(10000)
-
-		msgs := make([]keybase.MsgSummary, n)
-		for i := range msgs {
-			msgs[i] = keybase.MsgSummary{
-				ID:       i + 1,
-				SentAtMs: r.Int63n(20000),
-				Content:  keybase.MsgContent{Type: "text"},
-			}
-		}
-
-		got := FilterMessagesByTimestamp(msgs, cutoff)
-
-		// Verify: all returned messages have SentAtMs > cutoff
-		for _, m := range got {
-			if m.SentAtMs <= cutoff {
-				t.Logf("message %d has SentAtMs %d <= cutoff %d", m.ID, m.SentAtMs, cutoff)
-				return false
-			}
-		}
-
-		// Verify: count matches expected
-		expected := 0
-		for _, m := range msgs {
-			if m.SentAtMs > cutoff {
-				expected++
-			}
-		}
-		if len(got) != expected {
-			t.Logf("count mismatch: got %d, expected %d", len(got), expected)
-			return false
-		}
-
-		// Verify: relative order preserved
-		j := 0
-		for _, m := range msgs {
-			if m.SentAtMs > cutoff {
-				if got[j].ID != m.ID {
-					t.Logf("order mismatch at %d: got ID %d, want %d", j, got[j].ID, m.ID)
-					return false
-				}
-				j++
-			}
-		}
-		return true
-	}
-
-	if err := quick.Check(f, &quick.Config{MaxCount: 100}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // Feature: keybase-go-export, Property 9: Conversation filter matching
 func TestPropertyConversationFilterMatching(t *testing.T) {
 	f := func(seed int64) bool {

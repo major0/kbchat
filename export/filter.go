@@ -48,15 +48,3 @@ func matchesFilter(path, filter string) bool {
 
 	return strings.HasPrefix(path, normalized)
 }
-
-// FilterMessagesByTimestamp returns messages with SentAtMs strictly greater
-// than the cutoff timestamp, preserving relative order.
-func FilterMessagesByTimestamp(msgs []keybase.MsgSummary, cutoff int64) []keybase.MsgSummary {
-	var result []keybase.MsgSummary
-	for _, m := range msgs {
-		if m.SentAtMs > cutoff {
-			result = append(result, m)
-		}
-	}
-	return result
-}

@@ -10,9 +10,8 @@ import (
 	"path/filepath"
 )
 
-// AttachmentRef maps a message attachment to its content-addressable file on disk.
+// AttachmentRef maps an attachment to its content-addressable file on disk.
 type AttachmentRef struct {
-	MsgID      int    `json:"msg_id"`
 	Filename   string `json:"filename"`    // original filename from API
 	StorageRef string `json:"storage_ref"` // <sha256>.<ext> on disk
 }
@@ -75,7 +74,6 @@ func DownloadAttachment(client ClientAPI, convID string, msgID int, filename str
 	}
 
 	return &AttachmentRef{
-		MsgID:      msgID,
 		Filename:   filename,
 		StorageRef: ref,
 	}, nil

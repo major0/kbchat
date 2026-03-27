@@ -17,20 +17,18 @@ type mockClient struct {
 	dlCalled int
 }
 
-func (m *mockClient) ReadConversation(convID string, sinceTimestamp *int64) ([]keybase.MsgSummary, error) {
+func (m *mockClient) ReadConversation(convID string, known func(int) bool) ([]keybase.MsgSummary, error) {
 	if m.readErr != nil {
 		return nil, m.readErr
 	}
-	if sinceTimestamp != nil {
-		var filtered []keybase.MsgSummary
-		for _, msg := range m.msgs {
-			if msg.SentAtMs > *sinceTimestamp {
-				filtered = append(filtered, msg)
-			}
+	var result []keybase.MsgSummary
+	for _, msg := range m.msgs {
+		if known != nil && known(msg.ID) {
+			break
 		}
-		return filtered, nil
+		result = append(result, msg)
 	}
-	return m.msgs, nil
+	return result, nil
 }
 
 func (m *mockClient) DownloadAttachment(convID string, msgID int, outPath string) error {
@@ -38,27 +36,23 @@ func (m *mockClient) DownloadAttachment(convID string, msgID int, outPath string
 	if m.dlErr != nil {
 		return m.dlErr
 	}
-	// Write dummy content so hashing works
 	return os.WriteFile(outPath, []byte(fmt.Sprintf("content-for-msg-%d", msgID)), 0644)
 }
 
 func testConv() keybase.ConvSummary {
 	return keybase.ConvSummary{
-		ID: "conv1",
-		Channel: keybase.ChatChannel{
-			Name:        "self,alice",
-			MembersType: "impteamnative",
-		},
+		ID:      "conv1",
+		Channel: keybase.ChatChannel{Name: "self,alice", MembersType: "impteamnative"},
 	}
 }
 
 func testMsgs() []keybase.MsgSummary {
 	return []keybase.MsgSummary{
-		{ID: 1, SentAtMs: 1000, Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "hello"}}},
+		{ID: 3, SentAtMs: 3000, Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "newest"}}},
 		{ID: 2, SentAtMs: 2000, Content: keybase.MsgContent{Type: "attachment", Attachment: &keybase.AttachmentContent{
 			Object: keybase.AttachmentObject{Filename: "photo.jpg"},
-		}}},
-		{ID: 3, SentAtMs: 3000, Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "world"}}},
+		}}, Prev: []keybase.Prev{{ID: 1}}},
+		{ID: 1, SentAtMs: 1000, Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "oldest"}}},
 	}
 }
 
@@ -69,21 +63,28 @@ func TestExportConversation_DirectoryStructure(t *testing.T) {
 
 	convDir := filepath.Join(dir, "Chats", "alice")
 
-	// messages.json exists
-	if _, err := os.Stat(filepath.Join(convDir, "messages.json")); err != nil {
-		t.Errorf("messages.json missing: %v", err)
+	// messages/<id>/message.json exists for each message
+	for _, id := range []int{1, 2, 3} {
+		p := filepath.Join(convDir, "messages", fmt.Sprintf("%d", id), "message.json")
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("messages/%d/message.json missing: %v", id, err)
+		}
 	}
-	// .timestamp exists
-	if _, err := os.Stat(filepath.Join(convDir, ".timestamp")); err != nil {
-		t.Errorf(".timestamp missing: %v", err)
+	// head file exists
+	if _, err := os.Stat(filepath.Join(convDir, "head")); err != nil {
+		t.Errorf("head missing: %v", err)
+	}
+	head, _ := ReadHead(convDir)
+	if head != 3 {
+		t.Errorf("head = %d, want 3", head)
 	}
 	// attachments/ directory exists
 	if _, err := os.Stat(filepath.Join(convDir, "attachments")); err != nil {
 		t.Errorf("attachments/ missing: %v", err)
 	}
-	// attachments.json exists (we have one attachment)
-	if _, err := os.Stat(filepath.Join(convDir, "attachments.json")); err != nil {
-		t.Errorf("attachments.json missing: %v", err)
+	// per-message attachments.json for msg 2
+	if _, err := os.Stat(filepath.Join(convDir, "messages", "2", "attachments.json")); err != nil {
+		t.Errorf("messages/2/attachments.json missing: %v", err)
 	}
 
 	if result.MessagesExported != 3 {
@@ -103,16 +104,14 @@ func TestExportConversation_SkipAttachments(t *testing.T) {
 	result := ExportConversation(client, testConv(), dir, "self", true, false)
 
 	convDir := filepath.Join(dir, "Chats", "alice")
-
-	// messages.json exists
-	if _, err := os.Stat(filepath.Join(convDir, "messages.json")); err != nil {
-		t.Errorf("messages.json missing: %v", err)
+	// messages exist
+	if _, err := os.Stat(filepath.Join(convDir, "messages", "1", "message.json")); err != nil {
+		t.Errorf("message.json missing: %v", err)
 	}
-	// attachments.json should NOT exist
-	if _, err := os.Stat(filepath.Join(convDir, "attachments.json")); err == nil {
+	// per-message attachments.json should NOT exist
+	if _, err := os.Stat(filepath.Join(convDir, "messages", "2", "attachments.json")); err == nil {
 		t.Error("attachments.json should not exist with skip-attachments")
 	}
-
 	if result.AttachmentsDownloaded != 0 {
 		t.Errorf("AttachmentsDownloaded = %d, want 0", result.AttachmentsDownloaded)
 	}
@@ -139,24 +138,60 @@ func TestExportConversation_AttachmentFailureContinues(t *testing.T) {
 	client := &mockClient{msgs: testMsgs(), dlErr: fmt.Errorf("download failed")}
 	result := ExportConversation(client, testConv(), dir, "self", false, false)
 
-	// Messages should still be exported
 	if result.MessagesExported != 3 {
 		t.Errorf("MessagesExported = %d, want 3", result.MessagesExported)
 	}
-	// Attachment download failed but export continued
 	if result.AttachmentsDownloaded != 0 {
 		t.Errorf("AttachmentsDownloaded = %d, want 0", result.AttachmentsDownloaded)
 	}
 	if len(result.Errors) == 0 {
 		t.Error("expected attachment error")
 	}
-	// Timestamp should still be written
-	convDir := filepath.Join(dir, "Chats", "alice")
-	ts, err := ReadTimestamp(filepath.Join(convDir, ".timestamp"))
-	if err != nil {
-		t.Fatalf("read timestamp: %v", err)
+}
+
+func TestExportConversation_Incremental(t *testing.T) {
+	dir := t.TempDir()
+	// First run: export messages 1-3
+	client := &mockClient{msgs: testMsgs()}
+	result := ExportConversation(client, testConv(), dir, "self", true, false)
+	if result.MessagesExported != 3 {
+		t.Fatalf("first run: MessagesExported = %d, want 3", result.MessagesExported)
 	}
-	if ts != 3000 {
-		t.Errorf("timestamp = %d, want 3000", ts)
+
+	// Second run: messages 4,5 are new, 3 is known → stops
+	client2 := &mockClient{msgs: []keybase.MsgSummary{
+		{ID: 5, SentAtMs: 5000, Content: keybase.MsgContent{Type: "text"}, Prev: []keybase.Prev{{ID: 4}}},
+		{ID: 4, SentAtMs: 4000, Content: keybase.MsgContent{Type: "text"}, Prev: []keybase.Prev{{ID: 3}}},
+		{ID: 3, SentAtMs: 3000, Content: keybase.MsgContent{Type: "text"}}, // known
+	}}
+	result2 := ExportConversation(client2, testConv(), dir, "self", true, false)
+	if result2.MessagesExported != 2 {
+		t.Errorf("second run: MessagesExported = %d, want 2", result2.MessagesExported)
+	}
+	head, _ := ReadHead(filepath.Join(dir, "Chats", "alice"))
+	if head != 5 {
+		t.Errorf("head = %d, want 5", head)
+	}
+}
+
+func TestExportConversation_OrphanDetection(t *testing.T) {
+	dir := t.TempDir()
+	// Export message 5 which has prev pointing to message 3 (which doesn't exist locally)
+	client := &mockClient{msgs: []keybase.MsgSummary{
+		{ID: 5, SentAtMs: 5000, Content: keybase.MsgContent{Type: "text"},
+			Prev: []keybase.Prev{{ID: 3, Hash: "abc"}}},
+	}}
+	result := ExportConversation(client, testConv(), dir, "self", true, false)
+	if result.MessagesExported != 1 {
+		t.Fatalf("MessagesExported = %d, want 1", result.MessagesExported)
+	}
+
+	convDir := filepath.Join(dir, "Chats", "alice")
+	orphans, err := ReadOrphans(convDir, 5)
+	if err != nil {
+		t.Fatalf("read orphans: %v", err)
+	}
+	if len(orphans) != 1 || orphans[0].ID != 3 {
+		t.Errorf("orphans = %+v, want [{ID:3 Hash:abc}]", orphans)
 	}
 }
