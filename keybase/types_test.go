@@ -14,7 +14,7 @@ func TestPropertyConversationClassification(t *testing.T) {
 		r := rand.New(rand.NewSource(seed))
 
 		// Generate a random ChatChannel
-		membersTypes := []string{"team", "impteamnative", "impteamupgrade"}
+		membersTypes := []string{"team", "impteamnative", "impteamupgrade", "unknown"}
 		mt := membersTypes[r.Intn(len(membersTypes))]
 
 		// Generate participant name
@@ -60,6 +60,12 @@ func TestPropertyConversationClassification(t *testing.T) {
 					t.Logf("expected ConvGroup for %d participants, got %v", numParticipants, result)
 					return false
 				}
+			}
+		default:
+			// Unknown members_type falls back to ConvDM
+			if result != ConvDM {
+				t.Logf("expected ConvDM for unknown members_type %q, got %v", mt, result)
+				return false
 			}
 		}
 		return true

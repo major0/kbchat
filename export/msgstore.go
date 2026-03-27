@@ -15,6 +15,19 @@ func msgDir(convDir string, msgID int) string {
 	return filepath.Join(convDir, "messages", strconv.Itoa(msgID))
 }
 
+// writeJSON creates dir (if needed) and writes v as indented JSON to path.
+func writeJSON(dir, path string, v interface{}) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create dir: %w", err)
+	}
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal json: %w", err)
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0644)
+}
+
 // MsgExists checks if a message directory exists (O(1) stat).
 func MsgExists(convDir string, msgID int) bool {
 	_, err := os.Stat(msgDir(convDir, msgID))
@@ -24,15 +37,7 @@ func MsgExists(convDir string, msgID int) bool {
 // WriteMsg writes a message to messages/<id>/message.json.
 func WriteMsg(convDir string, msg keybase.MsgSummary) error {
 	dir := msgDir(convDir, msg.ID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create message dir: %w", err)
-	}
-	data, err := json.MarshalIndent(msg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal message: %w", err)
-	}
-	data = append(data, '\n')
-	return os.WriteFile(filepath.Join(dir, "message.json"), data, 0644)
+	return writeJSON(dir, filepath.Join(dir, "message.json"), msg)
 }
 
 // ReadMsg reads a message from messages/<id>/message.json.
@@ -73,15 +78,7 @@ func WriteHead(convDir string, msgID int) error {
 // WriteOrphans writes orphaned prev pointers to messages/<id>/orphans.json.
 func WriteOrphans(convDir string, msgID int, orphans []keybase.Prev) error {
 	dir := msgDir(convDir, msgID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create message dir: %w", err)
-	}
-	data, err := json.MarshalIndent(orphans, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal orphans: %w", err)
-	}
-	data = append(data, '\n')
-	return os.WriteFile(filepath.Join(dir, "orphans.json"), data, 0644)
+	return writeJSON(dir, filepath.Join(dir, "orphans.json"), orphans)
 }
 
 // ReadOrphans reads orphaned prev pointers from messages/<id>/orphans.json.
@@ -103,13 +100,5 @@ func ReadOrphans(convDir string, msgID int) ([]keybase.Prev, error) {
 // WriteMsgAttachments writes per-message attachment manifest to messages/<id>/attachments.json.
 func WriteMsgAttachments(convDir string, msgID int, refs []AttachmentRef) error {
 	dir := msgDir(convDir, msgID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create message dir: %w", err)
-	}
-	data, err := json.MarshalIndent(refs, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal attachments: %w", err)
-	}
-	data = append(data, '\n')
-	return os.WriteFile(filepath.Join(dir, "attachments.json"), data, 0644)
+	return writeJSON(dir, filepath.Join(dir, "attachments.json"), refs)
 }

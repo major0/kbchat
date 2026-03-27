@@ -42,9 +42,7 @@ func integrationMsgs(convID string) []keybase.MsgSummary {
 	return nil
 }
 
-type integrationClient struct {
-	convID string
-}
+type integrationClient struct{}
 
 func (c *integrationClient) ReadConversation(convID string, known func(int) bool) ([]keybase.MsgSummary, error) {
 	msgs := integrationMsgs(convID)
