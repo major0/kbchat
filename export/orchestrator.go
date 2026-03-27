@@ -99,6 +99,7 @@ func Run(cfg Config, listClient ListAPI, newClient ClientFactory) (Summary, erro
 				mu.Unlock()
 				return
 			}
+			defer client.Close()
 
 			for conv := range jobs {
 				result := ExportConversation(client, conv, cfg.DestDir, cfg.SelfUsername, cfg.SkipAttachments, cfg.Verbose)

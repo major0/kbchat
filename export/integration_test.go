@@ -62,6 +62,8 @@ func (c *integrationClient) DownloadAttachment(convID string, msgID int, outPath
 	return os.WriteFile(outPath, []byte(fmt.Sprintf("attachment-%s-%d", convID, msgID)), 0644)
 }
 
+func (c *integrationClient) Close() error { return nil }
+
 func TestIntegration_FullExport(t *testing.T) {
 	dir := t.TempDir()
 	cfg := Config{DestDir: dir, Parallel: 2, SelfUsername: "self"}

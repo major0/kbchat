@@ -39,6 +39,8 @@ func (m *mockClient) DownloadAttachment(convID string, msgID int, outPath string
 	return os.WriteFile(outPath, []byte(fmt.Sprintf("content-for-msg-%d", msgID)), 0644)
 }
 
+func (m *mockClient) Close() error { return nil }
+
 func testConv() keybase.ConvSummary {
 	return keybase.ConvSummary{
 		ID:      "conv1",

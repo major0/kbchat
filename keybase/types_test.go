@@ -75,7 +75,11 @@ func TestPropertyMessageSerializationRoundTrip(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))
 
-		contentTypes := []string{"text", "edit", "delete", "reaction", "attachment", "metadata", "headline"}
+		contentTypes := []string{
+			"text", "edit", "delete", "reaction", "attachment",
+			"attachment_uploaded", "metadata", "headline",
+			"system", "send_payment", "request_payment", "unfurl", "flip",
+		}
 		ct := contentTypes[r.Intn(len(contentTypes))]
 
 		msg := MsgSummary{
@@ -117,10 +121,25 @@ func TestPropertyMessageSerializationRoundTrip(t *testing.T) {
 				Object:   AttachmentObject{Filename: "photo.jpg", Title: "Photo", MimeType: "image/jpeg"},
 				Uploaded: true,
 			}
+		case "attachment_uploaded":
+			msg.Content.AttachmentUploaded = &AttachmentUploaded{
+				MessageID: 5,
+				Object:    AttachmentObject{Filename: "doc.pdf", Title: "Doc", MimeType: "application/pdf"},
+			}
 		case "metadata":
 			msg.Content.Metadata = &MetadataContent{ConversationTitle: "My Chat"}
 		case "headline":
 			msg.Content.Headline = &HeadlineContent{Headline: "Welcome!"}
+		case "system":
+			msg.Content.System = json.RawMessage(`{"systemType":1,"addedToTeam":{"team":"eng"}}`)
+		case "send_payment":
+			msg.Content.SendPayment = json.RawMessage(`{"paymentID":"pay123"}`)
+		case "request_payment":
+			msg.Content.RequestPayment = json.RawMessage(`{"requestID":"req456","note":"lunch"}`)
+		case "unfurl":
+			msg.Content.Unfurl = json.RawMessage(`{"unfurl":{"url":"https://example.com"}}`)
+		case "flip":
+			msg.Content.Flip = json.RawMessage(`{"text":"flip","gameID":"game1"}`)
 		}
 
 		// Serialize

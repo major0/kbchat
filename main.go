@@ -1,12 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/major0/keybase-export/export"
+	"github.com/major0/keybase-export/keybase"
 )
 
 var errHelp = errors.New("help requested")
@@ -92,6 +96,25 @@ func parseArgs(args []string) (*Config, error) {
 	return cfg, nil
 }
 
+// getSelfUsername retrieves the authenticated Keybase username via "keybase status --json".
+func getSelfUsername() (string, error) {
+	out, err := exec.Command("keybase", "status", "--json").Output()
+	if err != nil {
+		return "", fmt.Errorf("keybase status: %w", err)
+	}
+	// Parse just the Username field from the status JSON.
+	var status struct {
+		Username string `json:"Username"`
+	}
+	if err := json.Unmarshal(out, &status); err != nil {
+		return "", fmt.Errorf("parse keybase status: %w", err)
+	}
+	if status.Username == "" {
+		return "", fmt.Errorf("no authenticated keybase user")
+	}
+	return status.Username, nil
+}
+
 func main() {
 	cfg, err := parseArgs(os.Args[1:])
 	if err != nil {
@@ -109,5 +132,34 @@ func main() {
 		os.Exit(1)
 	}
 
-	_ = cfg // TODO: pass to orchestrator
+	// Get the authenticated username
+	selfUsername, err := getSelfUsername()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	exportCfg := export.Config{
+		DestDir:         cfg.DestDir,
+		Filters:         cfg.Filters,
+		Parallel:        cfg.Parallel,
+		Verbose:         cfg.Verbose,
+		SkipAttachments: cfg.SkipAttachments,
+		SelfUsername:     selfUsername,
+	}
+
+	listClient, err := keybase.NewClient()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	newClient := func() (export.ClientAPI, error) {
+		return keybase.NewClient()
+	}
+
+	if _, err := export.Run(exportCfg, listClient, newClient); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 }

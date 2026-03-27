@@ -21,6 +21,7 @@ type Result struct {
 type ClientAPI interface {
 	ReadConversation(convID string, known func(int) bool) ([]keybase.MsgSummary, error)
 	DownloadAttachment(convID string, msgID int, outPath string) error
+	Close() error
 }
 
 // ExportConversation exports a single conversation using per-message directories.
@@ -86,23 +87,25 @@ func ExportConversation(
 		}
 
 		// Download attachments for this message
-		if !skipAttachments && msg.Content.Type == "attachment" && msg.Content.Attachment != nil {
-			filename := msg.Content.Attachment.Object.Filename
-			if filename != "" {
-				ref, err := DownloadAttachment(client, conv.ID, msg.ID, filename, attachDir)
-				if err != nil {
-					if verbose {
-						log.Printf("attachment download failed (conv=%s msg=%d): %v", conv.ID, msg.ID, err)
-					}
-					result.Errors = append(result.Errors, err)
-				} else {
-					if err := WriteMsgAttachments(convDir, msg.ID, []AttachmentRef{*ref}); err != nil {
-						result.Errors = append(result.Errors, fmt.Errorf("write msg attachments %d: %w", msg.ID, err))
-					}
-					result.AttachmentsDownloaded++
-				}
-			}
+		if skipAttachments || msg.Content.Type != "attachment" || msg.Content.Attachment == nil {
+			continue
 		}
+		filename := msg.Content.Attachment.Object.Filename
+		if filename == "" {
+			continue
+		}
+		ref, err := DownloadAttachment(client, conv.ID, msg.ID, filename, attachDir)
+		if err != nil {
+			if verbose {
+				log.Printf("attachment download failed (conv=%s msg=%d): %v", conv.ID, msg.ID, err)
+			}
+			result.Errors = append(result.Errors, err)
+			continue
+		}
+		if err := WriteMsgAttachments(convDir, msg.ID, []AttachmentRef{*ref}); err != nil {
+			result.Errors = append(result.Errors, fmt.Errorf("write msg attachments %d: %w", msg.ID, err))
+		}
+		result.AttachmentsDownloaded++
 	}
 
 	// Update head to newest message
