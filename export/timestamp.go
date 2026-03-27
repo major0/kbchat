@@ -1,11 +1,14 @@
 package export
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/major0/keybase-export/keybase"
 )
 
 // ReadTimestamp reads a Unix millisecond timestamp from a plain text file.
@@ -49,4 +52,27 @@ func WriteTimestampAtomic(path string, ts int64) error {
 		return fmt.Errorf("rename temp file: %w", err)
 	}
 	return nil
+}
+
+// WriteMessages serializes messages to a JSON file with pretty-printing.
+func WriteMessages(path string, msgs []keybase.MsgSummary) error {
+	data, err := json.MarshalIndent(msgs, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal messages: %w", err)
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0644)
+}
+
+// ReadMessages deserializes messages from a JSON file.
+func ReadMessages(path string) ([]keybase.MsgSummary, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var msgs []keybase.MsgSummary
+	if err := json.Unmarshal(data, &msgs); err != nil {
+		return nil, fmt.Errorf("unmarshal messages: %w", err)
+	}
+	return msgs, nil
 }
