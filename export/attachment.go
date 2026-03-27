@@ -8,8 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-
-	"github.com/major0/keybase-export/keybase"
 )
 
 // AttachmentRef maps a message attachment to its content-addressable file on disk.
@@ -44,7 +42,7 @@ func HashFile(path string) (string, error) {
 
 // DownloadAttachment downloads an attachment using content-addressable storage.
 // Flow: download to temp → hash → store as <sha256>.<ext> → skip if exists.
-func DownloadAttachment(client *keybase.Client, convID string, msgID int, filename string, attachDir string) (*AttachmentRef, error) {
+func DownloadAttachment(client ClientAPI, convID string, msgID int, filename string, attachDir string) (*AttachmentRef, error) {
 	tmp, err := os.CreateTemp(attachDir, ".download-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp: %w", err)
