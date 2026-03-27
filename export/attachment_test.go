@@ -1,6 +1,8 @@
 package export
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -8,51 +10,108 @@ import (
 	"testing/quick"
 )
 
-// Feature: keybase-go-export, Property 6: Attachment filename deduplication produces unique names
-func TestPropertyFilenameDedup(t *testing.T) {
+// Feature: keybase-go-export, Property 6: Content-addressable attachment storage
+func TestPropertyContentAddressableStorage(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))
-		n := r.Intn(20) + 1
-		names := []string{"photo.jpg", "doc.pdf", "image.png", "file", "report.txt"}
+		dir := t.TempDir()
 
-		input := make([]string, n)
-		for i := range input {
-			input[i] = names[r.Intn(len(names))]
+		// Generate 1-10 attachments with possible content overlap
+		n := r.Intn(10) + 1
+		contents := [][]byte{
+			[]byte("content-a"),
+			[]byte("content-b"),
+			[]byte("content-c"),
+		}
+		filenames := []string{"photo.jpg", "doc.pdf", "image.png", "file", "report.txt"}
+
+		type input struct {
+			filename string
+			content  []byte
+		}
+		inputs := make([]input, n)
+		for i := range inputs {
+			inputs[i] = input{
+				filename: filenames[r.Intn(len(filenames))],
+				content:  contents[r.Intn(len(contents))],
+			}
 		}
 
-		used := make(map[string]bool)
-		output := make([]string, n)
-		for i, name := range input {
-			output[i] = DeduplicateFilename(name, used)
+		// Store each attachment
+		var refs []AttachmentRef
+		for i, in := range inputs {
+			// Write content to a temp file, hash it, store it
+			tmpPath := filepath.Join(dir, "tmp")
+			os.WriteFile(tmpPath, in.content, 0644)
+
+			hash, err := HashFile(tmpPath)
+			if err != nil {
+				t.Logf("hash error: %v", err)
+				return false
+			}
+			ref := StorageRef(hash, in.filename)
+			destPath := filepath.Join(dir, ref)
+
+			if _, err := os.Stat(destPath); err != nil {
+				os.Rename(tmpPath, destPath)
+			} else {
+				os.Remove(tmpPath)
+			}
+
+			refs = append(refs, AttachmentRef{
+				MsgID:      i + 1,
+				Filename:   in.filename,
+				StorageRef: ref,
+			})
 		}
 
-		// Output length must equal input length
-		if len(output) != len(input) {
-			t.Logf("length mismatch: %d vs %d", len(output), len(input))
+		// Verify: one manifest entry per input
+		if len(refs) != n {
+			t.Logf("manifest length %d != input length %d", len(refs), n)
 			return false
 		}
 
-		// All output names must be unique
-		seen := make(map[string]bool)
-		for _, name := range output {
-			if seen[name] {
-				t.Logf("duplicate output name: %s", name)
+		// Verify: all storage refs point to files that exist
+		for _, ref := range refs {
+			path := filepath.Join(dir, ref.StorageRef)
+			if _, err := os.Stat(path); err != nil {
+				t.Logf("storage ref %q does not exist", ref.StorageRef)
 				return false
 			}
-			seen[name] = true
 		}
 
-		// First occurrence of each name retains original
-		firstSeen := make(map[string]bool)
-		for i, name := range input {
-			if !firstSeen[name] {
-				firstSeen[name] = true
-				if output[i] != name {
-					t.Logf("first occurrence changed: input %q, output %q", name, output[i])
-					return false
-				}
+		// Verify: identical content produces same storage ref
+		hashMap := make(map[string]string) // content hash → storage ref
+		for i, in := range inputs {
+			h := sha256.Sum256(in.content)
+			hash := hex.EncodeToString(h[:])
+			expected := StorageRef(hash, in.filename)
+			if refs[i].StorageRef != expected {
+				t.Logf("ref mismatch: got %q, want %q", refs[i].StorageRef, expected)
+				return false
 			}
+			if prev, ok := hashMap[hash]; ok {
+				// Same content hash should produce same storage ref prefix
+				// (ext may differ if filenames differ)
+				_ = prev
+			}
+			hashMap[hash] = refs[i].StorageRef
 		}
+
+		// Verify: number of files on disk <= number of unique content hashes
+		files, _ := filepath.Glob(filepath.Join(dir, "*.*"))
+		uniqueContents := make(map[string]bool)
+		for _, in := range inputs {
+			h := sha256.Sum256(in.content)
+			// Account for different extensions producing different storage refs
+			ref := StorageRef(hex.EncodeToString(h[:]), in.filename)
+			uniqueContents[ref] = true
+		}
+		if len(files) > len(uniqueContents) {
+			t.Logf("files on disk (%d) > unique storage refs (%d)", len(files), len(uniqueContents))
+			return false
+		}
+
 		return true
 	}
 
@@ -61,60 +120,100 @@ func TestPropertyFilenameDedup(t *testing.T) {
 	}
 }
 
-func TestDeduplicateFilename_NoExtension(t *testing.T) {
-	used := make(map[string]bool)
-	got1 := DeduplicateFilename("README", used)
-	got2 := DeduplicateFilename("README", used)
-	if got1 != "README" {
-		t.Errorf("first: got %q, want %q", got1, "README")
-	}
-	if got2 != "README_1" {
-		t.Errorf("second: got %q, want %q", got2, "README_1")
+func TestStorageRef_NoExtension(t *testing.T) {
+	ref := StorageRef("abc123", "README")
+	if ref != "abc123.bin" {
+		t.Errorf("got %q, want %q", ref, "abc123.bin")
 	}
 }
 
-func TestDeduplicateFilename_MultipleCollisions(t *testing.T) {
-	used := make(map[string]bool)
-	results := make([]string, 5)
-	for i := range results {
-		results[i] = DeduplicateFilename("photo.jpg", used)
+func TestStorageRef_WithExtension(t *testing.T) {
+	ref := StorageRef("abc123", "photo.jpg")
+	if ref != "abc123.jpg" {
+		t.Errorf("got %q, want %q", ref, "abc123.jpg")
 	}
-	want := []string{"photo.jpg", "photo_1.jpg", "photo_2.jpg", "photo_3.jpg", "photo_4.jpg"}
-	for i := range results {
-		if results[i] != want[i] {
-			t.Errorf("index %d: got %q, want %q", i, results[i], want[i])
+}
+
+func TestHashFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.txt")
+	content := []byte("hello world")
+	os.WriteFile(path, content, 0644)
+
+	got, err := HashFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := sha256.Sum256(content)
+	want := hex.EncodeToString(h[:])
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSameContentDifferentFilename(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte("identical content")
+	h := sha256.Sum256(content)
+	hash := hex.EncodeToString(h[:])
+
+	// Store as photo.jpg
+	ref1 := StorageRef(hash, "photo.jpg")
+	os.WriteFile(filepath.Join(dir, ref1), content, 0644)
+
+	// Store as image.jpg — same hash, same ext → same file
+	ref2 := StorageRef(hash, "image.jpg")
+	if ref1 != ref2 {
+		t.Errorf("same content same ext should produce same ref: %q vs %q", ref1, ref2)
+	}
+
+	// Store as photo.png — same hash, different ext → different file
+	ref3 := StorageRef(hash, "photo.png")
+	if ref1 == ref3 {
+		t.Errorf("same content different ext should produce different ref: %q vs %q", ref1, ref3)
+	}
+}
+
+func TestSameFilenameDifferentContent(t *testing.T) {
+	content1 := []byte("content version 1")
+	content2 := []byte("content version 2")
+
+	h1 := sha256.Sum256(content1)
+	h2 := sha256.Sum256(content2)
+
+	ref1 := StorageRef(hex.EncodeToString(h1[:]), "photo.jpg")
+	ref2 := StorageRef(hex.EncodeToString(h2[:]), "photo.jpg")
+
+	if ref1 == ref2 {
+		t.Error("different content should produce different storage refs")
+	}
+}
+
+func TestManifestRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "attachments.json")
+
+	refs := []AttachmentRef{
+		{MsgID: 1, Filename: "photo.jpg", StorageRef: "abc123.jpg"},
+		{MsgID: 5, Filename: "doc.pdf", StorageRef: "def456.pdf"},
+	}
+
+	if err := WriteAttachmentManifest(path, refs); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ReadAttachmentManifest(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != len(refs) {
+		t.Fatalf("length mismatch: %d vs %d", len(got), len(refs))
+	}
+	for i := range refs {
+		if got[i] != refs[i] {
+			t.Errorf("index %d: got %+v, want %+v", i, got[i], refs[i])
 		}
-	}
-}
-
-func TestFilesEqual_IdenticalContent(t *testing.T) {
-	dir := t.TempDir()
-	a := filepath.Join(dir, "a.txt")
-	b := filepath.Join(dir, "b.txt")
-	os.WriteFile(a, []byte("hello world"), 0644)
-	os.WriteFile(b, []byte("hello world"), 0644)
-
-	equal, err := filesEqual(a, b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !equal {
-		t.Error("expected files to be equal")
-	}
-}
-
-func TestFilesEqual_DifferentContent(t *testing.T) {
-	dir := t.TempDir()
-	a := filepath.Join(dir, "a.txt")
-	b := filepath.Join(dir, "b.txt")
-	os.WriteFile(a, []byte("hello"), 0644)
-	os.WriteFile(b, []byte("world"), 0644)
-
-	equal, err := filesEqual(a, b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if equal {
-		t.Error("expected files to be different")
 	}
 }
