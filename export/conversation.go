@@ -51,12 +51,21 @@ func ExportConversation(
 	known := func(id int) bool { return MsgExists(convDir, id) }
 	msgs, err := client.ReadConversation(conv.ID, known)
 	if err != nil {
+		if verbose {
+			log.Printf("read conversation failed (conv=%s): %v", conv.ID, err)
+		}
 		result.Errors = append(result.Errors, fmt.Errorf("read conversation: %w", err))
 		return result
 	}
 
 	if len(msgs) == 0 {
 		return result
+	}
+
+	// Build set of IDs in this batch for orphan detection
+	batchIDs := make(map[int]bool, len(msgs))
+	for _, msg := range msgs {
+		batchIDs[msg.ID] = true
 	}
 
 	// Write each message to its own directory
@@ -71,19 +80,6 @@ func ExportConversation(
 		// Track newest message for head update
 		if msg.ID > newestID {
 			newestID = msg.ID
-		}
-
-		// Detect orphaned prev pointers (chain gaps from upstream deletions)
-		var orphans []keybase.Prev
-		for _, p := range msg.Prev {
-			if !MsgExists(convDir, p.ID) {
-				orphans = append(orphans, p)
-			}
-		}
-		if len(orphans) > 0 {
-			if err := WriteOrphans(convDir, msg.ID, orphans); err != nil {
-				result.Errors = append(result.Errors, fmt.Errorf("write orphans %d: %w", msg.ID, err))
-			}
 		}
 
 		// Download attachments for this message
@@ -106,6 +102,23 @@ func ExportConversation(
 			result.Errors = append(result.Errors, fmt.Errorf("write msg attachments %d: %w", msg.ID, err))
 		}
 		result.AttachmentsDownloaded++
+	}
+
+	// Detect orphaned prev pointers after all messages are written.
+	// A prev pointer is orphaned only if it references a message that is
+	// neither in this batch nor already on disk from a previous export.
+	for _, msg := range msgs {
+		var orphans []keybase.Prev
+		for _, p := range msg.Prev {
+			if !batchIDs[p.ID] && !MsgExists(convDir, p.ID) {
+				orphans = append(orphans, p)
+			}
+		}
+		if len(orphans) > 0 {
+			if err := WriteOrphans(convDir, msg.ID, orphans); err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("write orphans %d: %w", msg.ID, err))
+			}
+		}
 	}
 
 	// Update head to newest message
