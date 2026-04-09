@@ -1,3 +1,5 @@
+github.com/major0/dateparse v1.0.0 h1:rrnustW6jGoVJ9tYu8Llg886R5Sq+y8oIGCfvVVGsuo=
+github.com/major0/dateparse v1.0.0/go.mod h1:PJ+yEf7jumGmZbUAPc6KYBbd5w3IOp1fby4609XmBGA=
 github.com/major0/optargs v0.4.1 h1:TCiR/1Rc41+JEhX8GrXZD2B2VnQjzak/8nBOfUJeNq4=
 github.com/major0/optargs v0.4.1/go.mod h1:umQbh05Y+3FKzyeJMORwEXRATO3cvSS8lZdCQJwBFJY=
 golang.org/x/sys v0.43.0 h1:Rlag2XtaFTxp19wS8MXlJwTvoh8ArU6ezoyFsMyCTNI=
