@@ -47,7 +47,7 @@ Create `~/.config/kbchat/config.json`:
 | `export` | Export Keybase chat history to local store |
 | `list` (alias `ls`) | List conversations in the local store |
 | `view` | Display messages from a single conversation |
-| `search` | Search messages across conversations |
+| `grep` | Search messages across conversations |
 | `help` | Show usage information |
 
 ## Usage
@@ -153,12 +153,12 @@ kbchat view --count 0 Team/engineering/general
 kbchat view --date 2025-01-15 Chat/bob
 ```
 
-### search
+### grep
 
 Search messages across conversations.
 
 ```sh
-kbchat search [options] <pattern> [filters...]
+kbchat grep [options] <pattern> [filters...]
 ```
 
 Options:
@@ -181,16 +181,16 @@ Examples:
 
 ```sh
 # Glob search across all conversations
-kbchat search '*deploy*'
+kbchat grep '*deploy*'
 
 # Regex search in a specific team
-kbchat search -E 'error|fail' Team/engineering
+kbchat grep -E 'error|fail' Team/engineering
 
 # Search with context
-kbchat search -C 3 'outage' Team/ops
+kbchat grep -C 3 'outage' Team/ops
 
 # Search within a time range
-kbchat search --after '3 days ago' --before yesterday 'release'
+kbchat grep --after '3 days ago' --before yesterday 'release'
 ```
 
 ## Output Structure

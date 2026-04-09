@@ -39,7 +39,7 @@ func TestNewRootParserSubcommands(t *testing.T) {
 		{"list", []string{"list"}, "list"},
 		{"ls alias", []string{"ls"}, "ls"},
 		{"view", []string{"view"}, "view"},
-		{"search", []string{"search"}, "search"},
+		{"grep", []string{"grep"}, "grep"},
 		{"help", []string{"help"}, "help"},
 	}
 
@@ -72,7 +72,7 @@ func TestRunHelp(t *testing.T) {
 		{"help export", []string{"help", "export"}, 0},
 		{"help list", []string{"help", "list"}, 0},
 		{"help view", []string{"help", "view"}, 0},
-		{"help search", []string{"help", "search"}, 0},
+		{"help search", []string{"help", "grep"}, 0},
 		{"help help", []string{"help", "help"}, 0},
 		{"help unknown", []string{"help", "bogus"}, 1},
 		{"root --help", []string{"--help"}, 0},
@@ -80,7 +80,7 @@ func TestRunHelp(t *testing.T) {
 		{"export --help", []string{"export", "--help"}, 0},
 		{"list --help", []string{"list", "--help"}, 0},
 		{"view --help", []string{"view", "--help"}, 0},
-		{"search --help", []string{"search", "--help"}, 0},
+		{"search --help", []string{"grep", "--help"}, 0},
 		{"--help export", []string{"--help", "export"}, 0},
 	}
 
@@ -118,7 +118,7 @@ func TestHandleHelp(t *testing.T) {
 		{"export", []string{"export"}, 0},
 		{"list", []string{"list"}, 0},
 		{"view", []string{"view"}, 0},
-		{"search", []string{"search"}, 0},
+		{"grep", []string{"grep"}, 0},
 		{"unknown", []string{"bogus"}, 1},
 	}
 

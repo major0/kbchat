@@ -23,7 +23,7 @@ Commands:
   export    Export Keybase chat history to a local directory
   list      List conversations in the export store
   view      View messages from a conversation
-  search    Search messages across conversations
+  grep      Search messages across conversations
   help      Show help for a command
 
 Shared Options:
@@ -86,19 +86,17 @@ Options:
   --verbose            Include message IDs and metadata
   --help               Show this help message
 `, programName)
-	case "search":
-		fmt.Fprintf(os.Stderr, `Usage: %s search [options] <pattern> [filters...]
+	case "grep":
+		fmt.Fprintf(os.Stderr, `Usage: %s grep [options] [filters...] <pattern>
 
 Search messages across conversations.
 
 Arguments:
-  <pattern>       Search pattern (glob by default)
   [filters...]    Conversation filters
+  <pattern>       Search pattern (glob by default)
 
 Options:
-  -G, --regexp            Basic regular expression
-  -E, --enhanced-regexp   Extended regular expression
-  -P, --pcre              PCRE-compatible regular expression
+  -E, --regexp            Regular expression (Go regexp syntax)
   -i                      Case-insensitive matching
   -A <n>                  Show n messages after each match
   -B <n>                  Show n messages before each match
@@ -165,7 +163,7 @@ func newRootParser(args []string) (*optargs.Parser, *bool, error) {
 	}
 	p.AddCmd("export", emptyParser())
 	p.AddCmd("view", emptyParser())
-	p.AddCmd("search", emptyParser())
+	p.AddCmd("grep", emptyParser())
 	p.AddCmd("list", emptyParser())
 	_ = p.AddAlias("ls", "list")
 	p.AddCmd("help", emptyParser())
@@ -295,8 +293,8 @@ func run(args []string) int {
 			return 1
 		}
 
-	case "search":
-		if err := cmd.RunSearch(subArgs, cfg); err != nil {
+	case "grep":
+		if err := cmd.RunGrep(subArgs, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			return 1
 		}
@@ -344,7 +342,7 @@ func handleHelp(subParser *optargs.Parser) int {
 	name := args[0]
 	// Check if it's a known subcommand
 	switch name {
-	case "export", "list", "ls", "view", "search", "help":
+	case "export", "list", "ls", "view", "grep", "help":
 		subcommandUsage(name)
 		return 0
 	default:

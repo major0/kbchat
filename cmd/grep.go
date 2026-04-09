@@ -6,9 +6,9 @@ import (
 	"github.com/major0/kbchat/config"
 )
 
-// RunSearch executes the search subcommand.
+// RunGrep executes the grep subcommand.
 // args contains the remaining arguments after subcommand dispatch.
-func RunSearch(_ []string, _ *config.Config) error {
-	fmt.Println("search: not implemented")
+func RunGrep(_ []string, _ *config.Config) error {
+	fmt.Println("grep: not implemented")
 	return nil
 }
