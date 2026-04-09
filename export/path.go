@@ -35,3 +35,10 @@ func ConvDirPath(destDir string, conv keybase.ConvSummary, selfUsername string) 
 		return filepath.Join(destDir, "Chats", name)
 	}
 }
+
+// ConvDisplayName returns a human-readable relative path for a conversation.
+// DM/Group: Chats/<sorted_participants_minus_self>.
+// Team: Teams/<team_name>/<topic_name>.
+func ConvDisplayName(conv keybase.ConvSummary, selfUsername string) string {
+	return ConvDirPath("", conv, selfUsername)
+}

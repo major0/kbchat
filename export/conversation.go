@@ -36,6 +36,7 @@ func Conversation(
 	verbose bool,
 ) Result {
 	result := Result{ConvID: conv.ID}
+	displayName := ConvDisplayName(conv, selfUsername)
 
 	convDir := ConvDirPath(destDir, conv, selfUsername)
 	attachDir := filepath.Join(convDir, "attachments")
@@ -54,7 +55,7 @@ func Conversation(
 	msgs, err := client.ReadConversation(conv.ID, known)
 	if err != nil {
 		if verbose {
-			log.Printf("read conversation failed (conv=%s): %v", conv.ID, err)
+			log.Printf("read conversation failed (conv=%s): %v", displayName, err)
 		}
 		result.Errors = append(result.Errors, fmt.Errorf("read conversation: %w", err))
 		return result
@@ -62,7 +63,7 @@ func Conversation(
 
 	if len(msgs) == 0 {
 		// No new messages, but still run backfill for gaps from previous exports.
-		backfilled := backfillOrphans(client, conv, convDir, attachDir, skipAttachments, verbose)
+		backfilled := backfillOrphans(client, conv, convDir, attachDir, displayName, skipAttachments, verbose)
 		result.MessagesExported += backfilled.MessagesExported
 		result.AttachmentsDownloaded += backfilled.AttachmentsDownloaded
 		result.Errors = append(result.Errors, backfilled.Errors...)
@@ -100,7 +101,7 @@ func Conversation(
 		ref, err := DownloadAttachment(client, conv.Channel, msg.ID, filename, attachDir)
 		if err != nil {
 			if verbose {
-				log.Printf("attachment download failed (conv=%s msg=%d): %v", conv.ID, msg.ID, err)
+				log.Printf("attachment download failed (conv=%s msg=%d): %v", displayName, msg.ID, err)
 			}
 			result.Errors = append(result.Errors, err)
 			continue
@@ -139,7 +140,7 @@ func Conversation(
 	// Backfill gaps: scan existing messages for orphaned prev pointers
 	// and fetch any that are still missing. This resolves gaps left by
 	// previous exports that hit the ~1000 message pagination limit.
-	backfilled := backfillOrphans(client, conv, convDir, attachDir, skipAttachments, verbose)
+	backfilled := backfillOrphans(client, conv, convDir, attachDir, displayName, skipAttachments, verbose)
 	result.MessagesExported += backfilled.MessagesExported
 	result.AttachmentsDownloaded += backfilled.AttachmentsDownloaded
 	result.Errors = append(result.Errors, backfilled.Errors...)
@@ -154,6 +155,7 @@ func backfillOrphans(
 	conv keybase.ConvSummary,
 	convDir string,
 	attachDir string,
+	displayName string,
 	skipAttachments bool,
 	verbose bool,
 ) Result {
@@ -199,7 +201,7 @@ func backfillOrphans(
 	}
 
 	if verbose {
-		log.Printf("backfilling %d missing messages in [1,%d] (conv=%s)", len(missing), maxID, conv.ID)
+		log.Printf("backfilling %d missing messages in [1,%d] (conv=%s)", len(missing), maxID, displayName)
 	}
 
 	// Fetch in batches of 500.
@@ -240,7 +242,7 @@ func backfillOrphans(
 			ref, err := DownloadAttachment(client, conv.Channel, msg.ID, filename, attachDir)
 			if err != nil {
 				if verbose {
-					log.Printf("backfill attachment failed (conv=%s msg=%d): %v", conv.ID, msg.ID, err)
+					log.Printf("backfill attachment failed (conv=%s msg=%d): %v", displayName, msg.ID, err)
 				}
 				result.Errors = append(result.Errors, err)
 				continue

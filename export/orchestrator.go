@@ -105,7 +105,7 @@ func Run(cfg Config, listClient ListAPI, newClient ClientFactory) (Summary, erro
 				results = append(results, result)
 				done++
 				log.Printf("[%d/%d] %s: %d messages, %d attachments, %d errors",
-					done, total, conv.ID, result.MessagesExported, result.AttachmentsDownloaded, len(result.Errors))
+					done, total, ConvDisplayName(conv, cfg.SelfUsername), result.MessagesExported, result.AttachmentsDownloaded, len(result.Errors))
 				mu.Unlock()
 			}
 		})
