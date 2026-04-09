@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"math/rand"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing/quick"
 	"time"
 
+	"github.com/major0/kbchat/config"
 	"github.com/major0/kbchat/keybase"
 	"github.com/major0/kbchat/store"
 )
@@ -477,4 +479,480 @@ func fmtTokens(tokens []token) string {
 		}
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+// Feature: keybase-chat-list, Property 5: Single-column output has exactly
+// one entry per line.
+//
+// For any non-empty conversation list, the number of non-empty lines in
+// single-column output equals the number of conversations.
+//
+// **Validates: Req 1.7**
+
+// singleColumnInput holds a randomly generated list of ConvInfo values.
+type singleColumnInput struct {
+	Convs []store.ConvInfo
+}
+
+// Generate implements quick.Generator for singleColumnInput.
+func (singleColumnInput) Generate(r *rand.Rand, size int) reflect.Value {
+	types := []string{"Chat", "Team"}
+	names := []string{"alice", "bob", "alice,bob", "engineering", "design"}
+	channels := []string{"general", "random", "dev"}
+
+	n := 1 + r.Intn(20) // at least 1 conversation
+	convs := make([]store.ConvInfo, n)
+	for i := range n {
+		typ := types[r.Intn(len(types))]
+		name := names[r.Intn(len(names))]
+		var ch string
+		if typ == "Team" {
+			ch = channels[r.Intn(len(channels))]
+		}
+		convs[i] = store.ConvInfo{
+			Type:     typ,
+			Name:     name,
+			Channel:  ch,
+			MsgCount: r.Intn(100),
+		}
+	}
+	return reflect.ValueOf(singleColumnInput{Convs: convs})
+}
+
+func TestPropertySingleColumnLineCount(t *testing.T) {
+	f := func(input singleColumnInput) bool {
+		var buf bytes.Buffer
+		formatSingleColumn(&buf, input.Convs)
+
+		output := buf.String()
+		// Count non-empty lines.
+		lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+		nonEmpty := 0
+		for _, line := range lines {
+			if line != "" {
+				nonEmpty++
+			}
+		}
+
+		if nonEmpty != len(input.Convs) {
+			t.Logf("got %d non-empty lines, want %d convs", nonEmpty, len(input.Convs))
+			return false
+		}
+		return true
+	}
+
+	if err := quick.Check(f, &quick.Config{MaxCount: 100}); err != nil {
+		t.Error(err)
+	}
+}
+
+// Feature: keybase-chat-list, Property 6: Long format contains all required
+// fields.
+//
+// For any conversation formatted in long mode, the output line contains:
+// the type string, the message count as a decimal, and the conversation name.
+//
+// **Validates: Req 1.9, 1.13, 1.14**
+
+// longFormatInput holds a randomly generated ConvInfo for long format testing.
+type longFormatInput struct {
+	Conv store.ConvInfo
+}
+
+// Generate implements quick.Generator for longFormatInput.
+func (longFormatInput) Generate(r *rand.Rand, size int) reflect.Value {
+	types := []string{"Chat", "Team"}
+	names := []string{"alice", "bob", "alice,bob", "engineering", "design"}
+	channels := []string{"general", "random", "dev"}
+
+	typ := types[r.Intn(len(types))]
+	name := names[r.Intn(len(names))]
+	var ch string
+	if typ == "Team" {
+		ch = channels[r.Intn(len(channels))]
+	}
+
+	conv := store.ConvInfo{
+		Type:     typ,
+		Name:     name,
+		Channel:  ch,
+		MsgCount: r.Intn(500),
+	}
+	return reflect.ValueOf(longFormatInput{Conv: conv})
+}
+
+func TestPropertyLongFormatContainsRequiredFields(t *testing.T) {
+	const timeFmt = "2006-01-02 15:04:05"
+
+	f := func(input longFormatInput) bool {
+		var buf bytes.Buffer
+		formatLong(&buf, []store.ConvInfo{input.Conv}, timeFmt)
+
+		output := buf.String()
+
+		// Must contain the type string.
+		if !strings.Contains(output, input.Conv.Type) {
+			t.Logf("output=%q missing type=%q", output, input.Conv.Type)
+			return false
+		}
+
+		// Must contain the message count as a decimal.
+		countStr := strconv.Itoa(input.Conv.MsgCount)
+		if !strings.Contains(output, countStr) {
+			t.Logf("output=%q missing count=%q", output, countStr)
+			return false
+		}
+
+		// Must contain the conversation name.
+		nameStr := convName(input.Conv)
+		if !strings.Contains(output, nameStr) {
+			t.Logf("output=%q missing name=%q", output, nameStr)
+			return false
+		}
+
+		return true
+	}
+
+	if err := quick.Check(f, &quick.Config{MaxCount: 100}); err != nil {
+		t.Error(err)
+	}
+}
+
+// TestParseListArgs covers table-driven tests for flag parsing.
+func TestParseListArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantMode outputMode
+		wantFmt  string
+		wantVerb bool
+	}{
+		{
+			name:     "-1 selects single-column",
+			args:     []string{"-1"},
+			wantMode: modeSingleColumn,
+		},
+		{
+			name:     "-C selects columns",
+			args:     []string{"-C"},
+			wantMode: modeColumns,
+		},
+		{
+			name:     "-l selects long",
+			args:     []string{"-l"},
+			wantMode: modeLong,
+		},
+		{
+			name:     "--format=long selects long",
+			args:     []string{"--format=long"},
+			wantMode: modeLong,
+		},
+		{
+			name:     "--format=%t %n selects custom",
+			args:     []string{"--format=%t %n"},
+			wantMode: modeCustom,
+			wantFmt:  "%t %n",
+		},
+		{
+			name:     "--verbose selects long and sets verbose",
+			args:     []string{"--verbose"},
+			wantMode: modeLong,
+			wantVerb: true,
+		},
+		{
+			name:     "--format=single-column",
+			args:     []string{"--format=single-column"},
+			wantMode: modeSingleColumn,
+		},
+		{
+			name:     "--format=columns",
+			args:     []string{"--format=columns"},
+			wantMode: modeColumns,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts, _, err := parseListArgs(tt.args)
+			if err != nil {
+				t.Fatalf("parseListArgs(%v) error: %v", tt.args, err)
+			}
+			if opts.Mode != tt.wantMode {
+				t.Errorf("Mode = %d, want %d", opts.Mode, tt.wantMode)
+			}
+			if tt.wantFmt != "" && opts.FormatStr != tt.wantFmt {
+				t.Errorf("FormatStr = %q, want %q", opts.FormatStr, tt.wantFmt)
+			}
+			if opts.Verbose != tt.wantVerb {
+				t.Errorf("Verbose = %v, want %v", opts.Verbose, tt.wantVerb)
+			}
+		})
+	}
+}
+
+// createTestStore builds a temporary store directory with the given
+// conversations and returns the store path. Each conv entry specifies
+// type ("Chat" or "Team"), name, channel (Teams only), and message count.
+func createTestStore(t *testing.T, convs []store.ConvInfo) string {
+	t.Helper()
+	storeDir := t.TempDir()
+
+	for _, conv := range convs {
+		var convDir string
+		switch conv.Type {
+		case "Chat":
+			convDir = filepath.Join(storeDir, "Chats", conv.Name)
+		case "Team":
+			convDir = filepath.Join(storeDir, "Teams", conv.Name, conv.Channel)
+		}
+
+		msgsDir := filepath.Join(convDir, "messages")
+		if err := os.MkdirAll(msgsDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		// Create message directories with message.json files.
+		for i := 1; i <= conv.MsgCount; i++ {
+			msgDir := filepath.Join(msgsDir, strconv.Itoa(i))
+			if err := os.MkdirAll(msgDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			msg := keybase.MsgSummary{
+				ID:     i,
+				SentAt: int64(1000000 + i*1000),
+			}
+			data, err := json.Marshal(msg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(msgDir, "message.json"), data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	return storeDir
+}
+
+// TestFormatSingleColumn tests single-column output with known inputs.
+func TestFormatSingleColumn(t *testing.T) {
+	tests := []struct {
+		name  string
+		convs []store.ConvInfo
+		want  string
+	}{
+		{
+			name:  "empty list produces no output",
+			convs: nil,
+			want:  "",
+		},
+		{
+			name: "single chat",
+			convs: []store.ConvInfo{
+				{Type: "Chat", Name: "alice,bob"},
+			},
+			want: "Chats/alice,bob\n",
+		},
+		{
+			name: "single team",
+			convs: []store.ConvInfo{
+				{Type: "Team", Name: "engineering", Channel: "general"},
+			},
+			want: "Teams/engineering/general\n",
+		},
+		{
+			name: "mixed chat and team",
+			convs: []store.ConvInfo{
+				{Type: "Chat", Name: "alice,bob"},
+				{Type: "Team", Name: "engineering", Channel: "general"},
+			},
+			want: "Chats/alice,bob\nTeams/engineering/general\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			formatSingleColumn(&buf, tt.convs)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("formatSingleColumn() =\n%q\nwant:\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestFormatLong tests long format output with known inputs.
+func TestFormatLong(t *testing.T) {
+	const timeFmt = "2006-01-02 15:04:05"
+
+	// Create a temp store with messages for timestamp tests.
+	storeDir := t.TempDir()
+	chatDir := filepath.Join(storeDir, "Chats", "alice,bob")
+	msgsDir := filepath.Join(chatDir, "messages")
+
+	for _, m := range []struct {
+		id     int
+		sentAt int64
+	}{
+		{1, 1000000},
+		{3, 2000000},
+	} {
+		dir := filepath.Join(msgsDir, strconv.Itoa(m.id))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		msg := keybase.MsgSummary{ID: m.id, SentAt: m.sentAt}
+		data, err := json.Marshal(msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "message.json"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name  string
+		convs []store.ConvInfo
+		want  string
+	}{
+		{
+			name:  "empty list",
+			convs: nil,
+			want:  "",
+		},
+		{
+			name: "chat with messages",
+			convs: []store.ConvInfo{
+				{Type: "Chat", Name: "alice,bob", Dir: chatDir, MsgCount: 2},
+			},
+			want: "Chat\t2\t" +
+				time.Unix(1000000, 0).Format(timeFmt) + "\t" +
+				time.Unix(2000000, 0).Format(timeFmt) + "\t" +
+				"alice,bob\n",
+		},
+		{
+			name: "team without messages shows dashes",
+			convs: []store.ConvInfo{
+				{Type: "Team", Name: "engineering", Channel: "general", MsgCount: 0},
+			},
+			want: "Team\t0\t-\t-\tengineering/general\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			formatLong(&buf, tt.convs, timeFmt)
+			if got := buf.String(); got != tt.want {
+				t.Errorf("formatLong() =\n%q\nwant:\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRunListOutput tests RunList end-to-end with temp store directories.
+// We test the formatters directly since RunList writes to os.Stdout which
+// is harder to capture. parseListArgs is tested separately above.
+func TestRunListOutput(t *testing.T) {
+	// Build a store with known conversations.
+	convs := []store.ConvInfo{
+		{Type: "Chat", Name: "alice,bob", MsgCount: 3},
+		{Type: "Team", Name: "engineering", Channel: "general", MsgCount: 5},
+	}
+	storeDir := createTestStore(t, convs)
+
+	// Write a config file pointing to the store.
+	cfgDir := t.TempDir()
+	cfgPath := filepath.Join(cfgDir, "config.json")
+	cfgData, err := json.Marshal(config.Config{StorePath: storeDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, cfgData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.LoadFrom(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Scan conversations from the store to get Dir fields populated.
+	scanned, err := store.ScanConversations(cfg.StorePath)
+	if err != nil {
+		t.Fatalf("ScanConversations: %v", err)
+	}
+
+	t.Run("single-column output", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatSingleColumn(&buf, scanned)
+		lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+		if len(lines) != len(scanned) {
+			t.Errorf("got %d lines, want %d", len(lines), len(scanned))
+		}
+	})
+
+	t.Run("long format output", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatLong(&buf, scanned, cfg.TimeFmt())
+		lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+		if len(lines) != len(scanned) {
+			t.Errorf("got %d lines, want %d", len(lines), len(scanned))
+		}
+		// Each line should contain the type and name.
+		for i, conv := range scanned {
+			if !strings.Contains(lines[i], conv.Type) {
+				t.Errorf("line %d missing type %q: %q", i, conv.Type, lines[i])
+			}
+			if !strings.Contains(lines[i], convName(conv)) {
+				t.Errorf("line %d missing name %q: %q", i, convName(conv), lines[i])
+			}
+		}
+	})
+
+	t.Run("columns output", func(t *testing.T) {
+		var buf bytes.Buffer
+		formatColumns(&buf, scanned, 80)
+		output := buf.String()
+		// All conversation paths should appear in the output.
+		for _, conv := range scanned {
+			p := store.ConvInfoPath(conv)
+			if !strings.Contains(output, p) {
+				t.Errorf("columns output missing %q", p)
+			}
+		}
+	})
+
+	t.Run("empty store", func(t *testing.T) {
+		emptyDir := t.TempDir()
+		// Create Chats/ and Teams/ but no conversations.
+		if err := os.MkdirAll(filepath.Join(emptyDir, "Chats"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(emptyDir, "Teams"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		emptyConvs, err := store.ScanConversations(emptyDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(emptyConvs) != 0 {
+			t.Errorf("expected 0 conversations, got %d", len(emptyConvs))
+		}
+
+		var buf bytes.Buffer
+		formatSingleColumn(&buf, emptyConvs)
+		if buf.String() != "" {
+			t.Errorf("expected empty output, got %q", buf.String())
+		}
+	})
+
+	t.Run("no match message", func(t *testing.T) {
+		filtered := store.FilterConvInfos(scanned, []string{"Chat/nobody"})
+		if len(filtered) != 0 {
+			t.Errorf("expected 0 filtered conversations, got %d", len(filtered))
+		}
+	})
 }
