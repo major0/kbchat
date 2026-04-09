@@ -112,13 +112,13 @@ func TestWriteThreadSafe(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		go func(id int) {
 			defer wg.Done()
-			for j := 0; j < writes; j++ {
+			for range writes {
 				msg := strings.Repeat("x", 50) + "\n"
 				if _, err := lf.Write([]byte(msg)); err != nil {
-					t.Errorf("goroutine %d write %d: %v", id, j, err)
+					t.Errorf("goroutine %d write failed: %v", id, err)
 				}
 			}
 		}(i)

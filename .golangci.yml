@@ -1,0 +1,77 @@
+version: "2"
+
+linters:
+  default: all
+  disable:
+    # Style-opinion linters that conflict with project conventions
+    - varnamelen       # short variable names are idiomatic Go
+    - wsl              # whitespace style preferences (deprecated alias)
+    - wsl_v5           # whitespace style preferences
+    - nlreturn         # blank line before return is noise
+    - forbidigo        # fmt.Println is fine in stubs and CLI output
+    - goconst          # repeated strings in switch/case are idiomatic, not defects
+    - nilnil           # returning nil,nil in test mocks is intentional
+    - lll              # line length enforced by gofmt culture, not hard limit
+    - funlen           # function length checked by review, not linter
+    - cyclop           # cyclomatic complexity checked by review
+    - gocognit         # cognitive complexity checked by review
+    - gocyclo          # cyclomatic complexity checked by review
+    - maintidx         # maintainability index checked by review
+    - mnd              # magic number detection too noisy for CLI code
+    - exhaustruct      # requiring all struct fields initialized is impractical
+    - wrapcheck        # wrapping every external error is excessive
+    - err113           # requiring sentinel errors everywhere is impractical
+    - testpackage      # internal tests (same package) are preferred here
+    - paralleltest     # not all tests benefit from t.Parallel
+    - tparallel        # same as above
+    - depguard         # no import allowlist needed
+    - gomoddirectives  # no module directive restrictions
+    - gomodguard       # no module guard restrictions
+    - tagliatelle      # struct tags must match Keybase API snake_case format
+    - tagalign         # tag alignment is cosmetic
+    - exhaustive       # switch with default case handles all variants
+    - goheader         # no file header requirement
+    - grouper          # expression grouping is style preference
+    - decorder         # declaration order is style preference
+    - funcorder        # function order is style preference
+    - noinlineerr      # inline error handling is idiomatic Go
+    - noctx            # exec.Command lifecycle managed by Close(), not context
+    # Domain-specific linters not applicable
+    - arangolint       # no ArangoDB
+    - zerologlint      # no zerolog
+    - ginkgolinter     # no ginkgo
+    - testifylint      # no testify
+    - protogetter      # no protobuf
+    - rowserrcheck     # no database/sql
+    - sqlclosecheck    # no database/sql
+    - spancheck        # no OpenTelemetry
+    - promlinter       # no Prometheus
+    - loggercheck      # no structured logger (klog/zap/slog)
+    - sloglint         # no slog
+    - gosmopolitan     # no i18n requirements
+    - unqueryvet       # no SQL queries
+    - canonicalheader  # no net/http.Header usage
+
+  exclusions:
+    presets:
+      - std-error-handling
+      - common-false-positives
+    rules:
+      # Test files: weak random, relaxed permissions, unused interface params are expected
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "G301|G306|G404"
+      - path: _test\.go
+        linters:
+          - revive
+        text: "unused-parameter"
+      - path: _test\.go
+        linters:
+          - thelper
+      - path: _test\.go
+        linters:
+          - nestif
+      - path: _test\.go
+        linters:
+          - dupword

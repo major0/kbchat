@@ -8,13 +8,14 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"testing"
 	"testing/quick"
 
 	"github.com/major0/kbchat/keybase"
 )
 
-// Feature: keybase-chat-cli, Property 12: Store scan discovers all conversations
+// Feature: keybase-chat-cli, Property 12: Store scan discovers all conversations.
 //
 // For any store directory containing Chats/<name>/messages/ and
 // Teams/<team>/<channel>/messages/ subdirectories, ScanConversations must
@@ -94,7 +95,7 @@ func createStore(t *testing.T, layout storeLayout) string {
 func createMsgDirs(t *testing.T, msgsDir string, n int) {
 	t.Helper()
 	for i := 1; i <= n; i++ {
-		msgDir := filepath.Join(msgsDir, fmt.Sprintf("%d", i))
+		msgDir := filepath.Join(msgsDir, strconv.Itoa(i))
 		if err := os.MkdirAll(msgDir, 0o755); err != nil {
 			t.Fatal(err)
 		}

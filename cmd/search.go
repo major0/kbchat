@@ -8,7 +8,7 @@ import (
 
 // RunSearch executes the search subcommand.
 // args contains the remaining arguments after subcommand dispatch.
-func RunSearch(args []string, cfg *config.Config) error {
+func RunSearch(_ []string, _ *config.Config) error {
 	fmt.Println("search: not implemented")
 	return nil
 }

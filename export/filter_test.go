@@ -8,7 +8,7 @@ import (
 	"github.com/major0/kbchat/keybase"
 )
 
-// Feature: keybase-go-export, Property 9: Conversation filter matching
+// Feature: keybase-go-export, Property 9: Conversation filter matching.
 func TestPropertyConversationFilterMatching(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))

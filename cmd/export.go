@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -200,7 +201,7 @@ func runExport(
 		destDir = opts.DestDir
 	}
 	if destDir == "" {
-		return fmt.Errorf("no destination directory: provide a positional argument or set store_path in config")
+		return errors.New("no destination directory: provide a positional argument or set store_path in config")
 	}
 
 	// Build export config

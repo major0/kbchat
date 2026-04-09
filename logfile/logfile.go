@@ -68,5 +68,5 @@ func (l *LogFile) Close() error {
 
 // openAppend opens a file in append mode, creating it if it doesn't exist.
 func openAppend(path string) (*os.File, error) {
-	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 }

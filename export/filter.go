@@ -32,7 +32,7 @@ func FilterConversations(convs []keybase.ConvSummary, filters []string, selfUser
 
 // matchesFilter checks if a conversation path matches a filter string.
 // path is like "/Chats/alice,bob" or "/Teams/myteam/general"
-// filter is like "Chat/alice,bob" or "Team/myteam"
+// filter is like "Chat/alice,bob" or "Team/myteam".
 func matchesFilter(path, filter string) bool {
 	// Normalize path: strip leading separator
 	path = strings.TrimPrefix(path, "/")

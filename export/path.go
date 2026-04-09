@@ -10,7 +10,7 @@ import (
 
 // ConvDirPath derives the export directory path from conversation metadata.
 // DM/Group: <destDir>/Chats/<sorted_participants_minus_self>
-// Team: <destDir>/Teams/<team_name>/<topic_name>
+// Team: <destDir>/Teams/<team_name>/<topic_name>.
 func ConvDirPath(destDir string, conv keybase.ConvSummary, selfUsername string) string {
 	switch keybase.ClassifyConversation(conv.Channel) {
 	case keybase.ConvTeam:

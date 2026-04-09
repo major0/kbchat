@@ -2,19 +2,19 @@ package store
 
 import (
 	"encoding/json"
-	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"testing"
 	"testing/quick"
 
 	"github.com/major0/kbchat/keybase"
 )
 
-// Feature: keybase-chat-cli, Property 13: Message reading returns correct count and order
+// Feature: keybase-chat-cli, Property 13: Message reading returns correct count and order.
 //
 // For any conversation directory with N messages, ReadMessages(dir, 0) must
 // return all N messages sorted by ID ascending. ReadMessages(dir, k) for
@@ -107,7 +107,7 @@ func TestPropertyReadMessagesCountAndOrder(t *testing.T) {
 func writeMsgsByID(t *testing.T, msgsDir string, ids []int) {
 	t.Helper()
 	for _, id := range ids {
-		dir := filepath.Join(msgsDir, fmt.Sprintf("%d", id))
+		dir := filepath.Join(msgsDir, strconv.Itoa(id))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}

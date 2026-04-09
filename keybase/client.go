@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
 )
 
 // Client manages a long-running "keybase chat api" subprocess.
@@ -47,7 +48,7 @@ func (c *Client) Close() error {
 }
 
 // call sends a JSON command and decodes the response.
-func (c *Client) call(req interface{}, resp interface{}) error {
+func (c *Client) call(req any, resp any) error {
 	data, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
@@ -147,7 +148,7 @@ func (c *Client) ReadConversation(convID string, known func(int) bool) ([]MsgSum
 // "keybase chat download" invocation. For team channels, --channel specifies
 // the topic name.
 func (c *Client) DownloadAttachment(channel ChatChannel, msgID int, outPath string) error {
-	args := []string{"chat", "download", channel.Name, fmt.Sprintf("%d", msgID), "-o", outPath}
+	args := []string{"chat", "download", channel.Name, strconv.Itoa(msgID), "-o", outPath}
 	if channel.MembersType == "team" && channel.TopicName != "" {
 		args = append(args, "--channel", channel.TopicName)
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/major0/kbchat/keybase"
 )
 
-// Feature: keybase-go-export, Property 4: Message storage preserves all fields
+// Feature: keybase-go-export, Property 4: Message storage preserves all fields.
 func TestPropertyMessageStorageRoundTrip(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))
@@ -44,7 +44,7 @@ func TestPropertyMessageStorageRoundTrip(t *testing.T) {
 	}
 }
 
-// Feature: keybase-go-export, Property 5: No message collapsing
+// Feature: keybase-go-export, Property 5: No message collapsing.
 func TestPropertyNoMessageCollapsing(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))
@@ -52,7 +52,7 @@ func TestPropertyNoMessageCollapsing(t *testing.T) {
 		n := r.Intn(20) + 1
 		contentTypes := []string{"text", "edit", "delete", "reaction"}
 
-		for i := 0; i < n; i++ {
+		for i := range n {
 			ct := contentTypes[r.Intn(len(contentTypes))]
 			msg := keybase.MsgSummary{
 				ID:       i + 1,
@@ -76,7 +76,7 @@ func TestPropertyNoMessageCollapsing(t *testing.T) {
 		}
 
 		// Every message should exist as its own directory
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if !MsgExists(dir, i+1) {
 				t.Logf("message %d missing", i+1)
 				return false

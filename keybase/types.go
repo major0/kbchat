@@ -191,6 +191,7 @@ type APIError struct {
 // ConvType represents the classification of a conversation.
 type ConvType int
 
+// ConvType constants classify conversations as DM, Group, or Team.
 const (
 	ConvDM ConvType = iota
 	ConvGroup

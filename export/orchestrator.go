@@ -77,7 +77,7 @@ func Run(cfg Config, listClient ListAPI, newClient ClientFactory) (Summary, erro
 	total := len(filtered)
 	done := 0
 
-	for i := 0; i < cfg.Parallel; i++ {
+	for range cfg.Parallel {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -102,7 +102,7 @@ func Run(cfg Config, listClient ListAPI, newClient ClientFactory) (Summary, erro
 			defer func() { _ = client.Close() }()
 
 			for conv := range jobs {
-				result := ExportConversation(client, conv, cfg.DestDir, cfg.SelfUsername, cfg.SkipAttachments, cfg.Verbose)
+				result := Conversation(client, conv, cfg.DestDir, cfg.SelfUsername, cfg.SkipAttachments, cfg.Verbose)
 
 				mu.Lock()
 				results = append(results, result)

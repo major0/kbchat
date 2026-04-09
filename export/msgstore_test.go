@@ -10,7 +10,7 @@ import (
 	"github.com/major0/kbchat/keybase"
 )
 
-// Feature: keybase-go-export, Property 7: Incremental export detects chain gaps and records orphans
+// Feature: keybase-go-export, Property 7: Incremental export detects chain gaps and records orphans.
 func TestPropertyOrphanDetection(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))
@@ -30,7 +30,7 @@ func TestPropertyOrphanDetection(t *testing.T) {
 		newID := existing + r.Intn(10) + 1
 		var prevs []keybase.Prev
 		numPrevs := r.Intn(4) + 1
-		for i := 0; i < numPrevs; i++ {
+		for range numPrevs {
 			prevs = append(prevs, keybase.Prev{
 				ID:   r.Intn(newID) + 1,
 				Hash: "hash",

@@ -1,9 +1,11 @@
 package export
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/major0/kbchat/keybase"
@@ -36,7 +38,7 @@ func (m *mockClient) DownloadAttachment(channel keybase.ChatChannel, msgID int, 
 	if m.dlErr != nil {
 		return m.dlErr
 	}
-	return os.WriteFile(outPath, []byte(fmt.Sprintf("content-for-msg-%d", msgID)), 0644)
+	return os.WriteFile(outPath, fmt.Appendf(nil, "content-for-msg-%d", msgID), 0o600)
 }
 
 func (m *mockClient) Close() error { return nil }
@@ -58,16 +60,16 @@ func testMsgs() []keybase.MsgSummary {
 	}
 }
 
-func TestExportConversation_DirectoryStructure(t *testing.T) {
+func TestConversation_DirectoryStructure(t *testing.T) {
 	dir := t.TempDir()
 	client := &mockClient{msgs: testMsgs()}
-	result := ExportConversation(client, testConv(), dir, "self", false, false)
+	result := Conversation(client, testConv(), dir, "self", false, false)
 
 	convDir := filepath.Join(dir, "Chats", "alice")
 
 	// messages/<id>/message.json exists for each message
 	for _, id := range []int{1, 2, 3} {
-		p := filepath.Join(convDir, "messages", fmt.Sprintf("%d", id), "message.json")
+		p := filepath.Join(convDir, "messages", strconv.Itoa(id), "message.json")
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("messages/%d/message.json missing: %v", id, err)
 		}
@@ -100,10 +102,10 @@ func TestExportConversation_DirectoryStructure(t *testing.T) {
 	}
 }
 
-func TestExportConversation_SkipAttachments(t *testing.T) {
+func TestConversation_SkipAttachments(t *testing.T) {
 	dir := t.TempDir()
 	client := &mockClient{msgs: testMsgs()}
-	result := ExportConversation(client, testConv(), dir, "self", true, false)
+	result := Conversation(client, testConv(), dir, "self", true, false)
 
 	convDir := filepath.Join(dir, "Chats", "alice")
 	// messages exist
@@ -122,10 +124,10 @@ func TestExportConversation_SkipAttachments(t *testing.T) {
 	}
 }
 
-func TestExportConversation_APIFailure(t *testing.T) {
+func TestConversation_APIFailure(t *testing.T) {
 	dir := t.TempDir()
-	client := &mockClient{readErr: fmt.Errorf("api down")}
-	result := ExportConversation(client, testConv(), dir, "self", false, false)
+	client := &mockClient{readErr: errors.New("api down")}
+	result := Conversation(client, testConv(), dir, "self", false, false)
 
 	if len(result.Errors) == 0 {
 		t.Error("expected errors for API failure")
@@ -135,10 +137,10 @@ func TestExportConversation_APIFailure(t *testing.T) {
 	}
 }
 
-func TestExportConversation_AttachmentFailureContinues(t *testing.T) {
+func TestConversation_AttachmentFailureContinues(t *testing.T) {
 	dir := t.TempDir()
-	client := &mockClient{msgs: testMsgs(), dlErr: fmt.Errorf("download failed")}
-	result := ExportConversation(client, testConv(), dir, "self", false, false)
+	client := &mockClient{msgs: testMsgs(), dlErr: errors.New("download failed")}
+	result := Conversation(client, testConv(), dir, "self", false, false)
 
 	if result.MessagesExported != 3 {
 		t.Errorf("MessagesExported = %d, want 3", result.MessagesExported)
@@ -151,11 +153,11 @@ func TestExportConversation_AttachmentFailureContinues(t *testing.T) {
 	}
 }
 
-func TestExportConversation_Incremental(t *testing.T) {
+func TestConversation_Incremental(t *testing.T) {
 	dir := t.TempDir()
 	// First run: export messages 1-3
 	client := &mockClient{msgs: testMsgs()}
-	result := ExportConversation(client, testConv(), dir, "self", true, false)
+	result := Conversation(client, testConv(), dir, "self", true, false)
 	if result.MessagesExported != 3 {
 		t.Fatalf("first run: MessagesExported = %d, want 3", result.MessagesExported)
 	}
@@ -166,7 +168,7 @@ func TestExportConversation_Incremental(t *testing.T) {
 		{ID: 4, SentAtMs: 4000, Content: keybase.MsgContent{Type: "text"}, Prev: []keybase.Prev{{ID: 3}}},
 		{ID: 3, SentAtMs: 3000, Content: keybase.MsgContent{Type: "text"}}, // known
 	}}
-	result2 := ExportConversation(client2, testConv(), dir, "self", true, false)
+	result2 := Conversation(client2, testConv(), dir, "self", true, false)
 	if result2.MessagesExported != 2 {
 		t.Errorf("second run: MessagesExported = %d, want 2", result2.MessagesExported)
 	}
@@ -176,14 +178,14 @@ func TestExportConversation_Incremental(t *testing.T) {
 	}
 }
 
-func TestExportConversation_OrphanDetection(t *testing.T) {
+func TestConversation_OrphanDetection(t *testing.T) {
 	dir := t.TempDir()
 	// Export message 5 which has prev pointing to message 3 (which doesn't exist locally)
 	client := &mockClient{msgs: []keybase.MsgSummary{
 		{ID: 5, SentAtMs: 5000, Content: keybase.MsgContent{Type: "text"},
 			Prev: []keybase.Prev{{ID: 3, Hash: "abc"}}},
 	}}
-	result := ExportConversation(client, testConv(), dir, "self", true, false)
+	result := Conversation(client, testConv(), dir, "self", true, false)
 	if result.MessagesExported != 1 {
 		t.Fatalf("MessagesExported = %d, want 1", result.MessagesExported)
 	}

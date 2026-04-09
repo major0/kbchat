@@ -9,12 +9,12 @@ import (
 	"testing/quick"
 )
 
-// Feature: keybase-chat-cli, Property 11: Config file round-trip
+// Feature: keybase-chat-cli, Property 11: Config file round-trip.
 //
 // For any valid Config struct, writing to JSON and reading back must produce
 // an equivalent struct.
 //
-// **Validates: Requirements 1.2, 1.4**
+// Validates: Requirements 1.2, 1.4.
 func TestPropertyConfigRoundTrip(t *testing.T) {
 	f := func(storePath, timeFormat string) bool {
 		cfg := Config{

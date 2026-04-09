@@ -8,7 +8,7 @@ import (
 
 // RunList executes the list subcommand.
 // args contains the remaining arguments after subcommand dispatch.
-func RunList(args []string, cfg *config.Config) error {
+func RunList(_ []string, _ *config.Config) error {
 	fmt.Println("list: not implemented")
 	return nil
 }

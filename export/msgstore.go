@@ -16,8 +16,8 @@ func msgDir(convDir string, msgID int) string {
 }
 
 // writeJSON creates dir (if needed) and writes v as indented JSON to path.
-func writeJSON(dir, path string, v interface{}) error {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+func writeJSON(dir, path string, v any) error {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create dir: %w", err)
 	}
 	data, err := json.MarshalIndent(v, "", "  ")
@@ -25,7 +25,7 @@ func writeJSON(dir, path string, v interface{}) error {
 		return fmt.Errorf("marshal json: %w", err)
 	}
 	data = append(data, '\n')
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // MsgExists checks if a message directory exists (O(1) stat).
@@ -65,14 +65,15 @@ func ReadHead(convDir string) (int, error) {
 	}
 	id, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil {
-		return 0, nil // treat corruption as missing
+		// Corrupt head file — treat as missing rather than failing the export.
+		return 0, nil //nolint:nilerr // intentional: corruption recovery
 	}
 	return id, nil
 }
 
 // WriteHead writes the head message ID to the head file.
 func WriteHead(convDir string, msgID int) error {
-	return os.WriteFile(filepath.Join(convDir, "head"), []byte(strconv.Itoa(msgID)+"\n"), 0644)
+	return os.WriteFile(filepath.Join(convDir, "head"), []byte(strconv.Itoa(msgID)+"\n"), 0o600)
 }
 
 // WriteOrphans writes orphaned prev pointers to messages/<id>/orphans.json.

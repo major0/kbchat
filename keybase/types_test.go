@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 	"testing/quick"
 )
 
-// Feature: keybase-go-export, Property 1: Conversation classification is deterministic and correct
+// Feature: keybase-go-export, Property 1: Conversation classification is deterministic and correct.
 func TestPropertyConversationClassification(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))
@@ -19,10 +20,14 @@ func TestPropertyConversationClassification(t *testing.T) {
 
 		// Generate participant name
 		numParticipants := r.Intn(5) + 1
-		name := "user0"
+		var b strings.Builder
+		b.WriteString("user0")
 		for i := 1; i < numParticipants; i++ {
-			name += ",user" + string(rune('0'+i))
+			b.WriteByte(',')
+			b.WriteString("user")
+			b.WriteByte('0' + byte(i))
 		}
+		name := b.String()
 		if mt == "team" {
 			name = "myteam"
 		}
@@ -76,7 +81,7 @@ func TestPropertyConversationClassification(t *testing.T) {
 	}
 }
 
-// Feature: keybase-go-export, Property 3: Message serialization round-trip
+// Feature: keybase-go-export, Property 3: Message serialization round-trip.
 func TestPropertyMessageSerializationRoundTrip(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))

@@ -1,7 +1,9 @@
+// Package main is the entry point for the kbchat CLI.
 package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -169,7 +171,7 @@ func newRootParser(args []string) (*optargs.Parser, *bool, error) {
 	p.AddCmd("help", emptyParser())
 
 	// Set handlers for shared flags
-	_ = p.SetHandler("--verbose", func(name, arg string) error {
+	_ = p.SetHandler("--verbose", func(_, _ string) error {
 		verbose = true
 		return nil
 	})
@@ -190,7 +192,7 @@ func getSelfUsername() (string, error) {
 		return "", fmt.Errorf("parse keybase status: %w", err)
 	}
 	if status.Username == "" {
-		return "", fmt.Errorf("no authenticated keybase user")
+		return "", errors.New("no authenticated keybase user")
 	}
 	return status.Username, nil
 }
@@ -205,7 +207,7 @@ func run(args []string) int {
 	}
 
 	helpRequested := false
-	_ = p.SetHandler("--help", func(name, arg string) error {
+	_ = p.SetHandler("--help", func(_, _ string) error {
 		helpRequested = true
 		return nil
 	})
@@ -305,7 +307,7 @@ func run(args []string) int {
 
 // dispatchExport handles the export subcommand, including keybase dependency
 // check and authenticated username resolution (Req 2.7, 2.8).
-func dispatchExport(args []string, cfg *config.Config, verbose bool) int {
+func dispatchExport(args []string, cfg *config.Config, _ bool) int {
 	// Check keybase dependency only for export (Req 2.7)
 	if _, err := exec.LookPath("keybase"); err != nil {
 		fmt.Fprintf(os.Stderr, "error: keybase CLI not found in PATH\n")

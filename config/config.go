@@ -3,6 +3,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -53,7 +54,7 @@ func LoadFrom(path string) (*Config, error) {
 // and must exist on disk.
 func (c *Config) Validate() error {
 	if c.StorePath == "" {
-		return fmt.Errorf("store_path is required in config file")
+		return errors.New("store_path is required in config file")
 	}
 	info, err := os.Stat(c.StorePath)
 	if err != nil {

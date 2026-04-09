@@ -8,7 +8,7 @@ import (
 
 // RunView executes the view subcommand.
 // args contains the remaining arguments after subcommand dispatch.
-func RunView(args []string, cfg *config.Config) error {
+func RunView(_ []string, _ *config.Config) error {
 	fmt.Println("view: not implemented")
 	return nil
 }

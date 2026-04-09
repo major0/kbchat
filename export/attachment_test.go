@@ -10,7 +10,7 @@ import (
 	"testing/quick"
 )
 
-// Feature: keybase-go-export, Property 6: Content-addressable attachment storage
+// Feature: keybase-go-export, Property 6: Content-addressable attachment storage.
 func TestPropertyContentAddressableStorage(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))

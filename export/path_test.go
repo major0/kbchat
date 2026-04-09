@@ -3,6 +3,7 @@ package export
 import (
 	"math/rand"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -11,7 +12,7 @@ import (
 	"github.com/major0/kbchat/keybase"
 )
 
-// Feature: keybase-go-export, Property 2: Directory path derivation
+// Feature: keybase-go-export, Property 2: Directory path derivation.
 func TestPropertyDirectoryPathDerivation(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))
@@ -41,7 +42,7 @@ func TestPropertyDirectoryPathDerivation(t *testing.T) {
 			// Generate 1-5 participants plus self
 			users := []string{selfUser}
 			numOthers := r.Intn(5) + 1
-			for i := 0; i < numOthers; i++ {
+			for i := range numOthers {
 				users = append(users, string(rune('a'+i)))
 			}
 			mt := "impteamnative"
@@ -67,11 +68,9 @@ func TestPropertyDirectoryPathDerivation(t *testing.T) {
 			parts := strings.Split(participantPart, ",")
 
 			// Self should not be in the path
-			for _, p := range parts {
-				if p == selfUser {
-					t.Logf("self username found in path: %q", got)
-					return false
-				}
+			if slices.Contains(parts, selfUser) {
+				t.Logf("self username found in path: %q", got)
+				return false
 			}
 
 			// Participants should be sorted

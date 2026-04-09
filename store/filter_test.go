@@ -12,7 +12,7 @@ import (
 	"github.com/major0/kbchat/keybase"
 )
 
-// Feature: keybase-chat-cli, Property 16: Store filter matching is consistent with export filter matching
+// Feature: keybase-chat-cli, Property 16: Store filter matching is consistent with export filter matching.
 //
 // For any set of ConvInfo values and filter strings, store.FilterConvInfos
 // must return the same conversations that export.FilterConversations would

@@ -17,15 +17,15 @@ type Result struct {
 	Errors                []error
 }
 
-// ClientAPI abstracts the keybase.Client methods used by ExportConversation.
+// ClientAPI abstracts the keybase.Client methods used by Conversation.
 type ClientAPI interface {
 	ReadConversation(convID string, known func(int) bool) ([]keybase.MsgSummary, error)
 	DownloadAttachment(channel keybase.ChatChannel, msgID int, outPath string) error
 	Close() error
 }
 
-// ExportConversation exports a single conversation using per-message directories.
-func ExportConversation(
+// Conversation exports a single conversation using per-message directories.
+func Conversation(
 	client ClientAPI,
 	conv keybase.ConvSummary,
 	destDir string,
@@ -38,11 +38,11 @@ func ExportConversation(
 	convDir := ConvDirPath(destDir, conv, selfUsername)
 	attachDir := filepath.Join(convDir, "attachments")
 	msgsDir := filepath.Join(convDir, "messages")
-	if err := os.MkdirAll(attachDir, 0755); err != nil {
+	if err := os.MkdirAll(attachDir, 0o750); err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("create dirs: %w", err))
 		return result
 	}
-	if err := os.MkdirAll(msgsDir, 0755); err != nil {
+	if err := os.MkdirAll(msgsDir, 0o750); err != nil {
 		result.Errors = append(result.Errors, fmt.Errorf("create dirs: %w", err))
 		return result
 	}

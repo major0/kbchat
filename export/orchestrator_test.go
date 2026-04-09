@@ -8,7 +8,7 @@ import (
 	"github.com/major0/kbchat/keybase"
 )
 
-// Feature: keybase-go-export, Property 10: Export summary contains all counts
+// Feature: keybase-go-export, Property 10: Export summary contains all counts.
 func TestPropertySummaryCounts(t *testing.T) {
 	f := func(seed int64) bool {
 		r := rand.New(rand.NewSource(seed))
@@ -23,7 +23,7 @@ func TestPropertySummaryCounts(t *testing.T) {
 				MessagesExported:      m,
 				AttachmentsDownloaded: a,
 			}
-			for j := 0; j < e; j++ {
+			for range e {
 				results[i].Errors = append(results[i].Errors, nil)
 			}
 			wantMsgs += m
