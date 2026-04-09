@@ -2,9 +2,66 @@ package cmd
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/major0/kbchat/config"
+	"github.com/major0/kbchat/keybase"
 )
+
+// msgBody extracts the matchable text body from a message.
+// Returns the body and true for text, edit, and headline messages.
+// Returns ("", false) for all other types or nil content pointers.
+func msgBody(msg keybase.MsgSummary) (string, bool) {
+	switch msg.Content.Type {
+	case "text":
+		if msg.Content.Text == nil {
+			return "", false
+		}
+		return msg.Content.Text.Body, true
+	case "edit":
+		if msg.Content.Edit == nil {
+			return "", false
+		}
+		return msg.Content.Edit.Body, true
+	case "headline":
+		if msg.Content.Headline == nil {
+			return "", false
+		}
+		return msg.Content.Headline.Headline, true
+	default:
+		return "", false
+	}
+}
+
+// compileMatcher returns a match function for the given pattern.
+// Glob mode (isRegexp=false): converts glob to regexp, anchored for full-body match.
+// Regexp mode (isRegexp=true): uses pattern directly, unanchored (substring match).
+// Case-insensitive (icase=true): prepends (?i) to the compiled regexp.
+func compileMatcher(pattern string, isRegexp, icase bool) (func(string) bool, error) {
+	var rePattern string
+
+	if isRegexp {
+		rePattern = pattern
+	} else {
+		// Escape all regexp metacharacters, then convert glob wildcards.
+		escaped := regexp.QuoteMeta(pattern)
+		escaped = strings.ReplaceAll(escaped, `\*`, `.*`)
+		escaped = strings.ReplaceAll(escaped, `\?`, `.`)
+		rePattern = "^" + escaped + "$"
+	}
+
+	if icase {
+		rePattern = "(?i)" + rePattern
+	}
+
+	re, err := regexp.Compile(rePattern)
+	if err != nil {
+		return nil, fmt.Errorf("compiling pattern %q: %w", pattern, err)
+	}
+
+	return re.MatchString, nil
+}
 
 // RunGrep executes the grep subcommand.
 // args contains the remaining arguments after subcommand dispatch.
