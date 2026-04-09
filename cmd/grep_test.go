@@ -1,14 +1,22 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/quick"
+	"time"
 
+	"github.com/major0/kbchat/config"
 	"github.com/major0/kbchat/keybase"
 )
 
@@ -44,14 +52,15 @@ func TestPropertyPatternMatching(t *testing.T) {
 
 	// Sub-property: case-insensitive matching.
 	// Upper-cased pattern must match original string with icase=true.
+	// Uses regexp mode to avoid glob escaping issues with Unicode case folding.
 	t.Run("case_insensitive", func(t *testing.T) {
 		f := func(s string) bool {
 			if s == "" {
 				return true
 			}
-			escaped := escapeGlobLiteral(s)
-			upper := strings.ToUpper(escaped)
-			matcher, err := compileMatcher(upper, false, true)
+			// Use regexp mode with QuoteMeta to avoid glob/Unicode issues.
+			pat := regexp.QuoteMeta(strings.ToUpper(s))
+			matcher, err := compileMatcher(pat, true, true)
 			if err != nil {
 				return false
 			}
@@ -664,4 +673,490 @@ func TestContextWindows(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Property-based test for global count limit (Task 4.3)
+// ---------------------------------------------------------------------------
+
+// TestPropertyGlobalCountLimit verifies that --count K limits total match
+// lines to at most K across all conversations.
+// Validates: Requirements 2.6.
+func TestPropertyGlobalCountLimit(t *testing.T) {
+	cfg := &quick.Config{MaxCount: 100}
+
+	f := func(seed int64) bool {
+		rng := rand.New(rand.NewSource(seed))
+
+		// Generate 1-4 conversations with 1-10 messages each.
+		numConvs := rng.Intn(4) + 1
+		storeDir := t.TempDir()
+		totalMatchable := 0
+
+		for ci := range numConvs {
+			convName := fmt.Sprintf("conv%d", ci)
+			numMsgs := rng.Intn(10) + 1
+			msgsDir := filepath.Join(storeDir, "Chats", convName, "messages")
+			if err := os.MkdirAll(msgsDir, 0o755); err != nil {
+				t.Logf("mkdir: %v", err)
+				return false
+			}
+			for mi := range numMsgs {
+				// All messages are text with body "match" so they all match.
+				msg := keybase.MsgSummary{
+					ID:     mi + 1,
+					SentAt: int64(1000000000 + mi*60),
+					Sender: keybase.MsgSender{Username: "user"},
+					Content: keybase.MsgContent{
+						Type: "text",
+						Text: &keybase.TextContent{Body: "match"},
+					},
+				}
+				msgDir := filepath.Join(msgsDir, strconv.Itoa(msg.ID))
+				if err := os.MkdirAll(msgDir, 0o755); err != nil {
+					t.Logf("mkdir: %v", err)
+					return false
+				}
+				data, err := json.Marshal(msg)
+				if err != nil {
+					t.Logf("marshal: %v", err)
+					return false
+				}
+				if err := os.WriteFile(filepath.Join(msgDir, "message.json"), data, 0o644); err != nil {
+					t.Logf("write: %v", err)
+					return false
+				}
+				totalMatchable++
+			}
+		}
+
+		// Pick a count limit K between 1 and totalMatchable.
+		k := rng.Intn(totalMatchable) + 1
+
+		grepCfg := &config.Config{StorePath: storeDir}
+		var buf bytes.Buffer
+		args := []string{"--count", strconv.Itoa(k), "*match*"}
+		err := runGrep(args, grepCfg, &buf, time.Now())
+		if err != nil {
+			t.Logf("runGrep error: %v", err)
+			return false
+		}
+
+		// Count match lines: lines that aren't headers, separators, or blank.
+		matchLines := 0
+		for line := range strings.SplitSeq(buf.String(), "\n") {
+			if line == "" || line == "--" || strings.HasPrefix(line, "==> ") {
+				continue
+			}
+			matchLines++
+		}
+
+		if matchLines > k {
+			t.Logf("matchLines=%d > k=%d", matchLines, k)
+			return false
+		}
+
+		return true
+	}
+	if err := quick.Check(f, cfg); err != nil {
+		t.Error(err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Table-driven tests for parseGrepArgs (Task 4.4)
+// ---------------------------------------------------------------------------
+
+func TestParseGrepArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+		want    *grepOpts
+	}{
+		{
+			name:    "no args → error",
+			args:    nil,
+			wantErr: "missing required <pattern>",
+		},
+		{
+			name: "pattern only",
+			args: []string{"hello"},
+			want: &grepOpts{Pattern: "hello"},
+		},
+		{
+			name: "filters + pattern",
+			args: []string{"Chats/alice", "Teams/eng/*", "hello"},
+			want: &grepOpts{
+				Filters: []string{"Chats/alice", "Teams/eng/*"},
+				Pattern: "hello",
+			},
+		},
+		{
+			name: "-E sets Regexp",
+			args: []string{"-E", "err(or)?"},
+			want: &grepOpts{Pattern: "err(or)?", Regexp: true},
+		},
+		{
+			name: "-i sets ICase",
+			args: []string{"-i", "hello"},
+			want: &grepOpts{Pattern: "hello", ICase: true},
+		},
+		{
+			name: "-A 3",
+			args: []string{"-A", "3", "hello"},
+			want: &grepOpts{Pattern: "hello", CtxA: 3},
+		},
+		{
+			name: "-B 2",
+			args: []string{"-B", "2", "hello"},
+			want: &grepOpts{Pattern: "hello", CtxB: 2},
+		},
+		{
+			name: "-C 4 sets both",
+			args: []string{"-C", "4", "hello"},
+			want: &grepOpts{Pattern: "hello", CtxA: 4, CtxB: 4},
+		},
+		{
+			name: "-C 4 -A 1 overrides CtxA",
+			args: []string{"-C", "4", "-A", "1", "hello"},
+			want: &grepOpts{Pattern: "hello", CtxA: 1, CtxB: 4},
+		},
+		{
+			name: "--count 5",
+			args: []string{"--count", "5", "hello"},
+			want: &grepOpts{Pattern: "hello", Count: 5},
+		},
+		{
+			name: "--after",
+			args: []string{"--after", "2025-01-01", "hello"},
+			want: &grepOpts{Pattern: "hello", After: "2025-01-01"},
+		},
+		{
+			name: "--before",
+			args: []string{"--before", "2025-12-31", "hello"},
+			want: &grepOpts{Pattern: "hello", Before: "2025-12-31"},
+		},
+		{
+			name: "--verbose",
+			args: []string{"--verbose", "hello"},
+			want: &grepOpts{Pattern: "hello", Verbose: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseGrepArgs(tt.args)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error %q does not contain %q", err.Error(), tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseGrepArgs(%v)\n  got  %+v\n  want %+v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Table-driven tests for runGrep (Task 4.4)
+// ---------------------------------------------------------------------------
+
+// makeGrepStore creates a temp store with multiple Chat conversations.
+func makeGrepStore(t *testing.T, convs map[string][]keybase.MsgSummary) string {
+	t.Helper()
+	storeDir := t.TempDir()
+	for name, msgs := range convs {
+		msgsDir := filepath.Join(storeDir, "Chats", name, "messages")
+		if err := os.MkdirAll(msgsDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, msg := range msgs {
+			msgDir := filepath.Join(msgsDir, strconv.Itoa(msg.ID))
+			if err := os.MkdirAll(msgDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			data, err := json.Marshal(msg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(msgDir, "message.json"), data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return storeDir
+}
+
+// grepMsg creates a text MsgSummary with the given parameters.
+func grepMsg(id int, sentAt int64, user, body string) keybase.MsgSummary {
+	return keybase.MsgSummary{
+		ID:     id,
+		SentAt: sentAt,
+		Sender: keybase.MsgSender{Username: user, DeviceName: "phone"},
+		Content: keybase.MsgContent{
+			Type: "text",
+			Text: &keybase.TextContent{Body: body},
+		},
+	}
+}
+
+func TestRunGrep(t *testing.T) {
+	baseTime := int64(1718452800) // 2024-06-15 12:00:00 UTC
+	now := time.Unix(baseTime+3600*24, 0)
+
+	t.Run("single conversation match", func(t *testing.T) {
+		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+			"alice,bob": {
+				grepMsg(1, baseTime, "alice", "hello world"),
+				grepMsg(2, baseTime+60, "bob", "goodbye"),
+			},
+		})
+		var buf bytes.Buffer
+		err := runGrep([]string{"*hello*"}, &config.Config{StorePath: store}, &buf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "==> Chats/alice,bob <==") {
+			t.Errorf("missing header in output:\n%s", out)
+		}
+		if !strings.Contains(out, "hello world") {
+			t.Errorf("missing matched message in output:\n%s", out)
+		}
+		if strings.Contains(out, "goodbye") {
+			t.Errorf("non-matching message should not appear:\n%s", out)
+		}
+	})
+
+	t.Run("multi-conversation with separator", func(t *testing.T) {
+		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+			"alice,bob": {
+				grepMsg(1, baseTime, "alice", "match here"),
+			},
+			"alice,carol": {
+				grepMsg(1, baseTime, "carol", "match there"),
+			},
+		})
+		var buf bytes.Buffer
+		err := runGrep([]string{"*match*"}, &config.Config{StorePath: store}, &buf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "--\n") {
+			t.Errorf("missing -- separator between conversations:\n%s", out)
+		}
+		// Both headers should appear.
+		if !strings.Contains(out, "==> Chats/alice,bob <==") {
+			t.Errorf("missing alice,bob header:\n%s", out)
+		}
+		if !strings.Contains(out, "==> Chats/alice,carol <==") {
+			t.Errorf("missing alice,carol header:\n%s", out)
+		}
+	})
+
+	t.Run("blank line between non-contiguous windows", func(t *testing.T) {
+		// Messages 1,2,3,4,5 — matches at 1 and 5 with no context → two windows.
+		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+			"alice,bob": {
+				grepMsg(1, baseTime, "alice", "alpha target"),
+				grepMsg(2, baseTime+60, "bob", "filler one"),
+				grepMsg(3, baseTime+120, "alice", "filler two"),
+				grepMsg(4, baseTime+180, "bob", "filler three"),
+				grepMsg(5, baseTime+240, "alice", "omega target"),
+			},
+		})
+		var buf bytes.Buffer
+		err := runGrep([]string{"-E", "target"}, &config.Config{StorePath: store}, &buf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := buf.String()
+		lines := strings.Split(out, "\n")
+		// Expect: header, match1, blank, match5, trailing empty
+		foundBlank := false
+		for i, line := range lines {
+			if line == "" && i > 0 && i < len(lines)-1 {
+				foundBlank = true
+				break
+			}
+		}
+		if !foundBlank {
+			t.Errorf("expected blank line between non-contiguous windows:\n%s", out)
+		}
+	})
+
+	t.Run("verbose mode", func(t *testing.T) {
+		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+			"alice,bob": {
+				grepMsg(42, baseTime, "alice", "verbose test"),
+			},
+		})
+		var buf bytes.Buffer
+		err := runGrep([]string{"--verbose", "*verbose*"}, &config.Config{StorePath: store}, &buf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "[id=42]") {
+			t.Errorf("verbose output missing [id=42]:\n%s", out)
+		}
+		if !strings.Contains(out, "(phone)") {
+			t.Errorf("verbose output missing (phone):\n%s", out)
+		}
+	})
+
+	t.Run("count 3 across 2 conversations", func(t *testing.T) {
+		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+			"alice,bob": {
+				grepMsg(1, baseTime, "alice", "match 1"),
+				grepMsg(2, baseTime+60, "alice", "match 2"),
+			},
+			"alice,carol": {
+				grepMsg(1, baseTime, "carol", "match 3"),
+				grepMsg(2, baseTime+60, "carol", "match 4"),
+			},
+		})
+		var buf bytes.Buffer
+		err := runGrep([]string{"--count", "3", "-E", "match"}, &config.Config{StorePath: store}, &buf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Count match lines (not headers, separators, or blank lines).
+		matchLines := 0
+		for line := range strings.SplitSeq(buf.String(), "\n") {
+			if line == "" || line == "--" || strings.HasPrefix(line, "==> ") {
+				continue
+			}
+			matchLines++
+		}
+		if matchLines != 3 {
+			t.Errorf("expected 3 match lines, got %d\noutput:\n%s", matchLines, buf.String())
+		}
+	})
+
+	t.Run("count 0 unlimited", func(t *testing.T) {
+		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+			"alice,bob": {
+				grepMsg(1, baseTime, "alice", "match a"),
+				grepMsg(2, baseTime+60, "alice", "match b"),
+				grepMsg(3, baseTime+120, "alice", "match c"),
+			},
+		})
+		var buf bytes.Buffer
+		err := runGrep([]string{"--count", "0", "-E", "match"}, &config.Config{StorePath: store}, &buf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		matchLines := 0
+		for line := range strings.SplitSeq(buf.String(), "\n") {
+			if line == "" || line == "--" || strings.HasPrefix(line, "==> ") {
+				continue
+			}
+			matchLines++
+		}
+		if matchLines != 3 {
+			t.Errorf("expected 3 match lines (unlimited), got %d\noutput:\n%s", matchLines, buf.String())
+		}
+	})
+
+	t.Run("after/before timestamp filtering", func(t *testing.T) {
+		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+			"alice,bob": {
+				grepMsg(1, baseTime, "alice", "match early"),
+				grepMsg(2, baseTime+3600, "alice", "match mid"),
+				grepMsg(3, baseTime+7200, "alice", "match late"),
+			},
+		})
+		// Only match messages between baseTime+1800 and baseTime+5400.
+		afterTS := time.Unix(baseTime+1800, 0).Format(time.RFC3339)
+		beforeTS := time.Unix(baseTime+5400, 0).Format(time.RFC3339)
+		var buf bytes.Buffer
+		err := runGrep([]string{"--after", afterTS, "--before", beforeTS, "-E", "match"}, &config.Config{StorePath: store}, &buf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "match mid") {
+			t.Errorf("expected 'match mid' in output:\n%s", out)
+		}
+		if strings.Contains(out, "match early") {
+			t.Errorf("'match early' should be filtered out:\n%s", out)
+		}
+		if strings.Contains(out, "match late") {
+			t.Errorf("'match late' should be filtered out:\n%s", out)
+		}
+	})
+
+	t.Run("glob match", func(t *testing.T) {
+		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+			"alice,bob": {
+				grepMsg(1, baseTime, "alice", "we deployed today"),
+				grepMsg(2, baseTime+60, "bob", "sounds good"),
+			},
+		})
+		var buf bytes.Buffer
+		err := runGrep([]string{"*deploy*"}, &config.Config{StorePath: store}, &buf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "we deployed today") {
+			t.Errorf("glob *deploy* should match 'we deployed today':\n%s", out)
+		}
+		if strings.Contains(out, "sounds good") {
+			t.Errorf("'sounds good' should not match:\n%s", out)
+		}
+	})
+
+	t.Run("regexp match", func(t *testing.T) {
+		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+			"alice,bob": {
+				grepMsg(1, baseTime, "alice", "got an error"),
+				grepMsg(2, baseTime+60, "bob", "err happened"),
+				grepMsg(3, baseTime+120, "alice", "all good"),
+			},
+		})
+		var buf bytes.Buffer
+		err := runGrep([]string{"-E", "err(or)?"}, &config.Config{StorePath: store}, &buf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "got an error") {
+			t.Errorf("should match 'got an error':\n%s", out)
+		}
+		if !strings.Contains(out, "err happened") {
+			t.Errorf("should match 'err happened':\n%s", out)
+		}
+		if strings.Contains(out, "all good") {
+			t.Errorf("'all good' should not match:\n%s", out)
+		}
+	})
+
+	t.Run("no matches → empty output", func(t *testing.T) {
+		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+			"alice,bob": {
+				grepMsg(1, baseTime, "alice", "hello"),
+				grepMsg(2, baseTime+60, "bob", "world"),
+			},
+		})
+		var buf bytes.Buffer
+		err := runGrep([]string{"*zzzzz*"}, &config.Config{StorePath: store}, &buf, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if buf.String() != "" {
+			t.Errorf("expected empty output for no matches, got:\n%s", buf.String())
+		}
+	})
 }
