@@ -20,6 +20,7 @@ type Result struct {
 // ClientAPI abstracts the keybase.Client methods used by Conversation.
 type ClientAPI interface {
 	ReadConversation(convID string, known func(int) bool) ([]keybase.MsgSummary, error)
+	GetMessages(convID string, msgIDs []int) ([]keybase.MsgSummary, error)
 	DownloadAttachment(channel keybase.ChatChannel, msgID int, outPath string) error
 	Close() error
 }

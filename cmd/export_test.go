@@ -301,6 +301,10 @@ func (m *mockExportWorkerClient) ReadConversation(convID string, known func(int)
 	return result, nil
 }
 
+func (m *mockExportWorkerClient) GetMessages(_ string, _ []int) ([]keybase.MsgSummary, error) {
+	return nil, nil
+}
+
 func (m *mockExportWorkerClient) DownloadAttachment(_ keybase.ChatChannel, _ int, _ string) error {
 	return nil
 }

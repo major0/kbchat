@@ -133,6 +133,9 @@ type panicClient struct{}
 func (p *panicClient) ReadConversation(convID string, known func(int) bool) ([]keybase.MsgSummary, error) {
 	panic("test panic")
 }
+func (p *panicClient) GetMessages(_ string, _ []int) ([]keybase.MsgSummary, error) {
+	return nil, nil
+}
 func (p *panicClient) DownloadAttachment(channel keybase.ChatChannel, msgID int, outPath string) error {
 	return nil
 }

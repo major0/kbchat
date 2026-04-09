@@ -56,6 +56,10 @@ func (c *integrationClient) ReadConversation(convID string, known func(int) bool
 	return result, nil
 }
 
+func (c *integrationClient) GetMessages(_ string, _ []int) ([]keybase.MsgSummary, error) {
+	return nil, nil
+}
+
 func (c *integrationClient) DownloadAttachment(channel keybase.ChatChannel, msgID int, outPath string) error {
 	return os.WriteFile(outPath, fmt.Appendf(nil, "attachment-%s-%d", channel.Name, msgID), 0o600)
 }

@@ -90,13 +90,17 @@ type readOptions struct {
 }
 
 // ReadConversation reads messages from a conversation, handling pagination.
+// It first uses the paginated read API, then crawls prev chains via the
+// get API to retrieve messages beyond the ~1000 pagination limit.
 // The known function is called for each message ID; if it returns true,
-// pagination stops (the message already exists locally). Messages are
-// returned newest-first as received from the API.
+// that message is skipped (already exists locally). Messages are returned
+// newest-first as received from the API.
 func (c *Client) ReadConversation(convID string, known func(int) bool) ([]MsgSummary, error) {
 	var allMsgs []MsgSummary
-	var next string
+	seen := make(map[int]bool)
 
+	// Phase 1: paginated read (gets up to ~1000 newest messages).
+	var next string
 	for {
 		opts := readOptions{ConversationID: convID}
 		if next != "" {
@@ -123,6 +127,7 @@ func (c *Client) ReadConversation(convID string, known func(int) bool) ([]MsgSum
 			if m.Msg == nil {
 				continue
 			}
+			seen[m.Msg.ID] = true
 			if known != nil && known(m.Msg.ID) {
 				hitKnown = true
 				break
@@ -141,7 +146,97 @@ func (c *Client) ReadConversation(convID string, known func(int) bool) ([]MsgSum
 			break
 		}
 	}
+
+	// Phase 2: crawl prev chains to fetch messages beyond the pagination limit.
+	// Collect all prev IDs that we haven't seen yet and don't already exist locally.
+	pending := make(map[int]bool)
+	for _, msg := range allMsgs {
+		for _, p := range msg.Prev {
+			if !seen[p.ID] && (known == nil || !known(p.ID)) {
+				pending[p.ID] = true
+			}
+		}
+	}
+
+	for len(pending) > 0 {
+		// Collect up to 50 IDs per batch to avoid oversized requests.
+		batch := make([]int, 0, min(len(pending), 50))
+		for id := range pending {
+			batch = append(batch, id)
+			if len(batch) >= 50 {
+				break
+			}
+		}
+		for _, id := range batch {
+			delete(pending, id)
+		}
+
+		fetched, err := c.GetMessages(convID, batch)
+		if err != nil {
+			return nil, fmt.Errorf("get messages (chain crawl): %w", err)
+		}
+
+		for _, msg := range fetched {
+			if seen[msg.ID] {
+				continue
+			}
+			seen[msg.ID] = true
+			if known != nil && known(msg.ID) {
+				continue
+			}
+			allMsgs = append(allMsgs, msg)
+
+			// Enqueue this message's prev pointers for crawling.
+			for _, p := range msg.Prev {
+				if !seen[p.ID] && (known == nil || !known(p.ID)) {
+					pending[p.ID] = true
+				}
+			}
+		}
+	}
+
 	return allMsgs, nil
+}
+
+// getParams holds parameters for the get API call.
+type getParams struct {
+	Options getOptions `json:"options"`
+}
+
+type getOptions struct {
+	ConversationID string `json:"conversation_id"`
+	MessageIDs     []int  `json:"message_ids"`
+}
+
+// GetMessages fetches specific messages by ID using the get API.
+// This bypasses the ~1000 message pagination limit of the read API.
+func (c *Client) GetMessages(convID string, msgIDs []int) ([]MsgSummary, error) {
+	req := struct {
+		Method string    `json:"method"`
+		Params getParams `json:"params"`
+	}{
+		Method: "get",
+		Params: getParams{Options: getOptions{
+			ConversationID: convID,
+			MessageIDs:     msgIDs,
+		}},
+	}
+
+	var resp ReadResult
+	if err := c.call(req, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("keybase API error: %s", resp.Error.Message)
+	}
+
+	msgs := make([]MsgSummary, 0, len(resp.Result.Messages))
+	for _, m := range resp.Result.Messages {
+		if m.Msg != nil {
+			msgs = append(msgs, *m.Msg)
+		}
+	}
+	return msgs, nil
 }
 
 // DownloadAttachment downloads an attachment to outPath using a separate
