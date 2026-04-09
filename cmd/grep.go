@@ -63,6 +63,38 @@ func compileMatcher(pattern string, isRegexp, icase bool) (func(string) bool, er
 	return re.MatchString, nil
 }
 
+// window represents a contiguous range of message indices.
+// Start is inclusive, End is exclusive.
+type window struct {
+	Start int
+	End   int
+}
+
+// contextWindows expands match indices by ctxB before and ctxA after,
+// clamps to [0, msgLen), and merges overlapping/adjacent ranges into
+// sorted, non-overlapping windows.
+func contextWindows(matchIdxs []int, msgLen, ctxB, ctxA int) []window {
+	if len(matchIdxs) == 0 {
+		return nil
+	}
+
+	windows := make([]window, 0, len(matchIdxs))
+	for _, idx := range matchIdxs {
+		start := max(idx-ctxB, 0)
+		end := min(idx+1+ctxA, msgLen)
+
+		// Merge with previous window if overlapping or adjacent.
+		if n := len(windows); n > 0 && start <= windows[n-1].End {
+			if end > windows[n-1].End {
+				windows[n-1].End = end
+			}
+		} else {
+			windows = append(windows, window{Start: start, End: end})
+		}
+	}
+	return windows
+}
+
 // RunGrep executes the grep subcommand.
 // args contains the remaining arguments after subcommand dispatch.
 func RunGrep(_ []string, _ *config.Config) error {
