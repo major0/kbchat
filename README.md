@@ -8,10 +8,11 @@ Replaces the TypeScript/Deno [keybase-export](https://github.com/eilvelia/keybas
 
 - Per-message directory structure (`messages/<id>/message.json`) for O(1) lookups
 - Content-addressable attachment storage (`<sha256>.<ext>`)
-- Incremental backups via message-chain walking
+- Full history export via prev-chain crawling (bypasses the ~1000 message pagination limit)
+- Incremental backups with automatic gap detection and backfill
 - Concurrent downloads via goroutine worker pool
 - Preserves full message history (no edit/delete collapsing)
-- Offline list, view, and search — no Keybase client needed for read commands
+- Offline list, view, and grep — no Keybase client needed for read commands
 
 ## Requirements
 
@@ -46,7 +47,7 @@ Create `~/.config/kbchat/config.json`:
 |---------|-------------|
 | `export` | Export Keybase chat history to local store |
 | `list` (alias `ls`) | List conversations in the local store |
-| `view` | Display messages from a single conversation |
+| `view` | Display messages from one or more conversations |
 | `grep` | Search messages across conversations |
 | `help` | Show usage information |
 
@@ -61,6 +62,8 @@ kbchat export [options] [destdir] [filters...]
 ```
 
 When `destdir` is omitted, uses `store_path` from the config file.
+
+On each run, export fetches new messages incrementally and backfills any gaps in existing history. Messages that the API cannot return (deleted, ephemeral) are recorded as placeholders to avoid re-requesting them.
 
 Options:
 
@@ -106,8 +109,10 @@ Options:
 |------|-------------|
 | `-1` | One conversation per line (default when stdout is not a terminal) |
 | `-C` | Column format (default when stdout is a terminal) |
-| `-l`, `--verbose` | Long format: type, message count, timestamps, name |
+| `-l`, `--verbose` | Long format: type, count, size, created, modified, name |
 | `--format=<fmt>` | Named format (`single-column`, `columns`, `long`) or custom format string |
+
+Custom format tokens: `%t` (type), `%n` (name), `%c` (count), `%C` (created), `%M` (modified), `%h` (head ID), `%{field}` (named field), `%%` (literal %).
 
 Examples:
 
@@ -115,7 +120,7 @@ Examples:
 # List all conversations
 kbchat list
 
-# List with long format
+# List with long format (includes disk size)
 kbchat list -l
 
 # Filter by pattern
@@ -124,21 +129,25 @@ kbchat list 'Chats/*bob*' 'Teams/engineering/*'
 
 ### view
 
-Display messages from a single conversation.
+Display messages from one or more conversations.
 
 ```sh
-kbchat view [options] <filter>
+kbchat view [options] <filter> [<filter> ...]
 ```
+
+When multiple conversations match, output uses `==> path <==` headers and `--` separators between conversation blocks (like `head`/`tail`). A single conversation is displayed without headers.
 
 Options:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--count=<n>` | Number of messages (`0` for all) | 20 |
+| `--count=<n>` | Number of messages per conversation (`0` for all) | 20 |
 | `--date=<YYYY-MM-DD>` | Show messages from a specific day | — |
 | `--after=<timestamp>` | Show messages after timestamp | — |
 | `--before=<timestamp>` | Show messages before timestamp | — |
 | `--verbose` | Include message IDs and metadata | off |
+
+Timestamps accept any format supported by [dateparse](https://github.com/major0/dateparse): RFC 3339, date-only, Unix epoch, relative expressions (`3 days ago`, `last monday`), and named references (`yesterday`, `tomorrow`).
 
 Examples:
 
@@ -146,11 +155,17 @@ Examples:
 # View last 20 messages from a DM
 kbchat view Chat/alice
 
+# View multiple conversations
+kbchat view 'Chat/*bob*' Chat/carol
+
 # View all messages from a team channel
 kbchat view --count 0 Team/engineering/general
 
 # View messages from a specific day
 kbchat view --date 2025-01-15 Chat/bob
+
+# View messages in a time range
+kbchat view --after '3 days ago' --before yesterday Chat/alice
 ```
 
 ### grep
@@ -158,16 +173,18 @@ kbchat view --date 2025-01-15 Chat/bob
 Search messages across conversations.
 
 ```sh
-kbchat grep [options] <pattern> [filters...]
+kbchat grep [options] [filters...] <pattern>
 ```
+
+The default pattern mode is glob (`*` matches any characters, `?` matches one). Use `-E` for Go regexp (unanchored substring match). Searches text, edit, and headline messages; other types appear only as context lines.
+
+Output uses `==> path <==` headers per conversation and `--` separators between conversation blocks. Non-contiguous match windows within a conversation are separated by a blank line.
 
 Options:
 
 | Flag | Description |
 |------|-------------|
-| `-G`, `--regexp` | Basic regular expression |
-| `-E`, `--enhanced-regexp` | Extended regular expression |
-| `-P`, `--pcre` | PCRE-compatible pattern |
+| `-E`, `--regexp` | Interpret pattern as Go regexp |
 | `-i` | Case-insensitive matching |
 | `-A <n>` | Show n messages after each match |
 | `-B <n>` | Show n messages before each match |
@@ -175,7 +192,7 @@ Options:
 | `--after=<timestamp>` | Search messages after timestamp |
 | `--before=<timestamp>` | Search messages before timestamp |
 | `--count=<n>` | Limit total results |
-| `--verbose` | Include message IDs and conversation IDs |
+| `--verbose` | Include message IDs and metadata |
 
 Examples:
 
@@ -189,8 +206,8 @@ kbchat grep -E 'error|fail' Team/engineering
 # Search with context
 kbchat grep -C 3 'outage' Team/ops
 
-# Search within a time range
-kbchat grep --after '3 days ago' --before yesterday 'release'
+# Case-insensitive search within a time range
+kbchat grep -i --after '3 days ago' --before yesterday 'release'
 ```
 
 ## Output Structure
@@ -220,11 +237,20 @@ kbchat grep --after '3 days ago' --before yesterday 'release'
 
 ```sh
 # Run tests
-go test ./... -count=1
+make test
 
 # Run tests with coverage
-go test ./... -coverprofile=coverage.out
-go tool cover -func=coverage.out
+make coverage
+make coverage-func
+
+# Validate coverage meets 70% floor
+make coverage-validate
+
+# Run linter
+make lint
+
+# Full static analysis
+make static-check
 
 # Install pre-commit hooks
 pre-commit install
