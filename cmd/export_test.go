@@ -1,9 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/major0/kbchat/config"
+	"github.com/major0/kbchat/export"
+	"github.com/major0/kbchat/keybase"
 )
 
 func TestParseExportArgs(t *testing.T) {
@@ -171,4 +176,96 @@ func sliceEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestRunExportContinuousMultipleCycles(t *testing.T) {
+	destDir := t.TempDir()
+	cfg := &config.Config{StorePath: destDir}
+
+	// Mock keybase client factory: returns nil client (mock runFunc ignores it).
+	mockNewClient := func() (*keybase.Client, error) {
+		return nil, nil
+	}
+
+	var cycles int
+	mockRun := func(cfg export.Config, listClient export.ListAPI, newClient export.ClientFactory) (export.Summary, error) {
+		cycles++
+		return export.Summary{}, nil
+	}
+
+	// Sleep mock: cancel after 3 cycles by returning an error.
+	mockSleep := func(ctx context.Context, d time.Duration) error {
+		if cycles >= 3 {
+			return context.Canceled
+		}
+		return nil
+	}
+
+	err := runExport(
+		[]string{"--continuous", "--interval", "1s"},
+		cfg, "testuser", mockNewClient, mockSleep, mockRun,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cycles != 3 {
+		t.Errorf("expected 3 cycles, got %d", cycles)
+	}
+}
+
+func TestRunExportContinuousSignalCancellation(t *testing.T) {
+	destDir := t.TempDir()
+	cfg := &config.Config{StorePath: destDir}
+
+	mockNewClient := func() (*keybase.Client, error) {
+		return nil, nil
+	}
+
+	var cycles int
+	mockRun := func(cfg export.Config, listClient export.ListAPI, newClient export.ClientFactory) (export.Summary, error) {
+		cycles++
+		return export.Summary{}, nil
+	}
+
+	// Sleep mock: simulate context cancellation during sleep on first cycle.
+	mockSleep := func(ctx context.Context, d time.Duration) error {
+		return context.Canceled
+	}
+
+	err := runExport(
+		[]string{"--continuous", "--interval", "1s"},
+		cfg, "testuser", mockNewClient, mockSleep, mockRun,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cycles != 1 {
+		t.Errorf("expected 1 cycle before cancellation, got %d", cycles)
+	}
+}
+
+func TestRunExportSingleShot(t *testing.T) {
+	destDir := t.TempDir()
+	cfg := &config.Config{StorePath: destDir}
+
+	mockNewClient := func() (*keybase.Client, error) {
+		return nil, nil
+	}
+
+	var called int
+	mockRun := func(cfg export.Config, listClient export.ListAPI, newClient export.ClientFactory) (export.Summary, error) {
+		called++
+		return export.Summary{Messages: 5}, nil
+	}
+
+	err := runExport(
+		[]string{},
+		cfg, "testuser", mockNewClient, nil, mockRun,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called != 1 {
+		t.Errorf("expected export.Run called once, got %d", called)
+	}
 }
