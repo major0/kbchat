@@ -402,7 +402,7 @@ func formatColumns(w io.Writer, convs []store.ConvInfo, width int) {
 }
 
 // formatLong writes one conversation per line in long format:
-// <type>\t<count>\t<created>\t<modified>\t<name>.
+// <type>\t<count>\t<size>\t<created>\t<modified>\t<name>.
 func formatLong(w io.Writer, convs []store.ConvInfo, timeFmt string) {
 	for _, conv := range convs {
 		created, modified := convTimestamps(conv)
@@ -414,8 +414,37 @@ func formatLong(w io.Writer, convs []store.ConvInfo, timeFmt string) {
 		if !modified.IsZero() {
 			modifiedStr = modified.Format(timeFmt)
 		}
-		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n",
-			conv.Type, conv.MsgCount, createdStr, modifiedStr, convName(conv))
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\n",
+			conv.Type, conv.MsgCount, formatSize(convDirSize(conv.Dir)), createdStr, modifiedStr, convName(conv))
+	}
+}
+
+// convDirSize returns the total size in bytes of all files under dir.
+func convDirSize(dir string) int64 {
+	var total int64
+	_ = filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil //nolint:nilerr // skip unreadable entries, continue walk
+		}
+		if info, ierr := d.Info(); ierr == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+// formatSize formats bytes into a human-readable string (B, K, M, G).
+func formatSize(bytes int64) string {
+	switch {
+	case bytes >= 1<<30:
+		return fmt.Sprintf("%.1fG", float64(bytes)/float64(1<<30))
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.1fM", float64(bytes)/float64(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.1fK", float64(bytes)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%dB", bytes)
 	}
 }
 

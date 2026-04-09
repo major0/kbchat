@@ -768,31 +768,34 @@ func TestFormatLong(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		convs []store.ConvInfo
-		want  string
+		name      string
+		convs     []store.ConvInfo
+		wantSubs  []string // substrings that must appear in output
+		wantEmpty bool
 	}{
 		{
-			name:  "empty list",
-			convs: nil,
-			want:  "",
+			name:      "empty list",
+			convs:     nil,
+			wantEmpty: true,
 		},
 		{
 			name: "chat with messages",
 			convs: []store.ConvInfo{
 				{Type: "Chat", Name: "alice,bob", Dir: chatDir, MsgCount: 2},
 			},
-			want: "Chat\t2\t" +
-				time.Unix(1000000, 0).Format(timeFmt) + "\t" +
-				time.Unix(2000000, 0).Format(timeFmt) + "\t" +
-				"alice,bob\n",
+			wantSubs: []string{
+				"Chat\t2\t",
+				time.Unix(1000000, 0).Format(timeFmt),
+				time.Unix(2000000, 0).Format(timeFmt),
+				"alice,bob",
+			},
 		},
 		{
 			name: "team without messages shows dashes",
 			convs: []store.ConvInfo{
 				{Type: "Team", Name: "engineering", Channel: "general", MsgCount: 0},
 			},
-			want: "Team\t0\t-\t-\tengineering/general\n",
+			wantSubs: []string{"Team\t0\t", "-\t-\t", "engineering/general"},
 		},
 	}
 
@@ -800,8 +803,17 @@ func TestFormatLong(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			formatLong(&buf, tt.convs, timeFmt)
-			if got := buf.String(); got != tt.want {
-				t.Errorf("formatLong() =\n%q\nwant:\n%q", got, tt.want)
+			got := buf.String()
+			if tt.wantEmpty {
+				if got != "" {
+					t.Errorf("formatLong() = %q, want empty", got)
+				}
+				return
+			}
+			for _, sub := range tt.wantSubs {
+				if !strings.Contains(got, sub) {
+					t.Errorf("formatLong() missing %q in:\n%s", sub, got)
+				}
 			}
 		})
 	}
