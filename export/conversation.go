@@ -61,6 +61,11 @@ func Conversation(
 	}
 
 	if len(msgs) == 0 {
+		// No new messages, but still run backfill for gaps from previous exports.
+		backfilled := backfillOrphans(client, conv, convDir, attachDir, skipAttachments, verbose)
+		result.MessagesExported += backfilled.MessagesExported
+		result.AttachmentsDownloaded += backfilled.AttachmentsDownloaded
+		result.Errors = append(result.Errors, backfilled.Errors...)
 		return result
 	}
 
@@ -231,8 +236,10 @@ func backfillOrphans(
 	return result
 }
 
-// collectMissingOrphans scans all messages/<id>/orphans.json files and
-// returns the set of referenced message IDs that don't exist on disk.
+// collectMissingOrphans scans all messages on disk and returns the set of
+// prev-referenced message IDs that don't exist on disk. This catches both
+// explicit orphans.json entries and implicit gaps where prev pointers
+// reference messages that were never fetched.
 func collectMissingOrphans(convDir string) map[int]bool {
 	msgsDir := filepath.Join(convDir, "messages")
 	entries, err := os.ReadDir(msgsDir)
@@ -241,24 +248,33 @@ func collectMissingOrphans(convDir string) map[int]bool {
 	}
 
 	missing := make(map[int]bool)
+	existing := make(map[int]bool)
+
+	// First pass: collect all existing message IDs.
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		msgID, err := strconv.Atoi(e.Name())
+		id, err := strconv.Atoi(e.Name())
 		if err != nil {
 			continue
 		}
-		orphans, err := ReadOrphans(convDir, msgID)
-		if err != nil || len(orphans) == 0 {
+		existing[id] = true
+	}
+
+	// Second pass: read each message's prev pointers and find gaps.
+	for id := range existing {
+		msg, err := ReadMsg(convDir, id)
+		if err != nil || msg == nil {
 			continue
 		}
-		for _, o := range orphans {
-			if !MsgExists(convDir, o.ID) {
-				missing[o.ID] = true
+		for _, p := range msg.Prev {
+			if !existing[p.ID] {
+				missing[p.ID] = true
 			}
 		}
 	}
+
 	return missing
 }
 
