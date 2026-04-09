@@ -2,8 +2,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/major0/kbchat/config"
@@ -135,9 +140,28 @@ func parsePositiveInt(s string) (int, error) {
 	return n, nil
 }
 
+// exportFunc is the signature for the export runner, matching export.Run.
+type exportFunc func(cfg export.Config, listClient export.ListAPI, newClient export.ClientFactory) (export.Summary, error)
+
 // RunExport executes the export subcommand.
 // args contains the remaining arguments after subcommand dispatch.
 func RunExport(args []string, cfg *config.Config, selfUsername string) error {
+	return runExport(args, cfg, selfUsername, keybase.NewClient, nil, nil)
+}
+
+// runExport is the internal implementation of RunExport, accepting injectable
+// dependencies for testing. sleepFunc overrides time-based sleeping when
+// non-nil; it receives the context and interval, returning an error if the
+// context was cancelled during the sleep. runFunc overrides export.Run when
+// non-nil.
+func runExport(
+	args []string,
+	cfg *config.Config,
+	selfUsername string,
+	newKeybaseClient func() (*keybase.Client, error),
+	sleepFunc func(ctx context.Context, d time.Duration) error,
+	runFunc exportFunc,
+) error {
 	opts, err := parseExportArgs(args)
 	if err != nil {
 		return err
@@ -162,18 +186,65 @@ func RunExport(args []string, cfg *config.Config, selfUsername string) error {
 		SelfUsername:    selfUsername,
 	}
 
-	// Create discovery client
-	listClient, err := keybase.NewClient()
-	if err != nil {
-		return fmt.Errorf("creating keybase client: %w", err)
-	}
-
 	// Worker factory: each worker gets its own keybase client
 	newClient := func() (export.ClientAPI, error) {
-		return keybase.NewClient()
+		return newKeybaseClient()
 	}
 
-	// Single-shot export (continuous mode will be added in Task 6)
-	_, err = export.Run(exportCfg, listClient, newClient)
-	return err
+	run := runFunc
+	if run == nil {
+		run = export.Run
+	}
+
+	if !opts.Continuous {
+		// Single-shot export
+		listClient, err := newKeybaseClient()
+		if err != nil {
+			return fmt.Errorf("creating keybase client: %w", err)
+		}
+		_, err = run(exportCfg, listClient, newClient)
+		return err
+	}
+
+	// Continuous mode: loop with signal-based cancellation (Req 3.5, 3.8)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	sleep := sleepFunc
+	if sleep == nil {
+		sleep = defaultSleep
+	}
+
+	for {
+		listClient, err := newKeybaseClient()
+		if err != nil {
+			return fmt.Errorf("creating keybase client: %w", err)
+		}
+
+		// Run one export cycle; let it complete even if signal arrived
+		_, err = run(exportCfg, listClient, newClient)
+		if err != nil {
+			log.Printf("export cycle error: %v", err)
+		}
+
+		// Check if cancelled before sleeping
+		if ctx.Err() != nil {
+			return nil
+		}
+
+		// Sleep between cycles; wake early on signal
+		if err := sleep(ctx, opts.Interval); err != nil {
+			return nil // context cancelled during sleep
+		}
+	}
+}
+
+// defaultSleep sleeps for d or until ctx is cancelled, whichever comes first.
+func defaultSleep(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
 }
