@@ -61,7 +61,7 @@ func TestPropertyContentAddressableStorage(t *testing.T) {
 					return false
 				}
 			} else {
-				os.Remove(tmpPath)
+				_ = os.Remove(tmpPath)
 			}
 
 			refs = append(refs, AttachmentRef{

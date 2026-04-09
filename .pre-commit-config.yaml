@@ -11,6 +11,15 @@ repos:
       - id: check-json
       - id: check-added-large-files
 
+  - repo: local
+    hooks:
+      - id: check-whitespace
+        name: check whitespace errors
+        entry: git diff-index --check --cached HEAD --
+        language: system
+        stages: [pre-commit]
+        always_run: true
+
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0
     hooks:

@@ -24,23 +24,23 @@ type ChatChannel struct {
 
 // MsgSummary represents a single message from the read API.
 type MsgSummary struct {
-	ID                 int         `json:"id"`
-	ConversationID     string      `json:"conversation_id"`
-	Channel            ChatChannel `json:"channel"`
-	Sender             MsgSender   `json:"sender"`
-	SentAt             int64       `json:"sent_at"`
-	SentAtMs           int64       `json:"sent_at_ms"`
-	Content            MsgContent  `json:"content"`
-	Prev               []Prev      `json:"prev"`
-	Unread             bool        `json:"unread"`
-	RevokedDevice      bool        `json:"revoked_device,omitempty"`
-	KBFSEncrypted      bool        `json:"kbfs_encrypted,omitempty"`
-	IsEphemeral        bool        `json:"is_ephemeral,omitempty"`
-	HasPairwiseMacs    bool        `json:"has_pairwise_macs,omitempty"`
-	AtMentionUsernames []string    `json:"at_mention_usernames,omitempty"`
-	ChannelMention     string      `json:"channel_mention,omitempty"`
-	Reactions          *Reactions  `json:"reactions,omitempty"`
-	BotInfo            *BotInfo    `json:"bot_info,omitempty"`
+	ID                 int             `json:"id"`
+	ConversationID     string          `json:"conversation_id"`
+	Channel            ChatChannel     `json:"channel"`
+	Sender             MsgSender       `json:"sender"`
+	SentAt             int64           `json:"sent_at"`
+	SentAtMs           int64           `json:"sent_at_ms"`
+	Content            MsgContent      `json:"content"`
+	Prev               []Prev          `json:"prev"`
+	Unread             bool            `json:"unread"`
+	RevokedDevice      bool            `json:"revoked_device,omitempty"`
+	KBFSEncrypted      bool            `json:"kbfs_encrypted,omitempty"`
+	IsEphemeral        bool            `json:"is_ephemeral,omitempty"`
+	HasPairwiseMacs    bool            `json:"has_pairwise_macs,omitempty"`
+	AtMentionUsernames []string        `json:"at_mention_usernames,omitempty"`
+	ChannelMention     string          `json:"channel_mention,omitempty"`
+	Reactions          json.RawMessage `json:"reactions,omitempty"`
+	BotInfo            *BotInfo        `json:"bot_info,omitempty"`
 }
 
 // MsgSender identifies who sent a message.
@@ -73,16 +73,6 @@ type MsgContent struct {
 type Prev struct {
 	ID   int    `json:"id"`
 	Hash string `json:"hash"`
-}
-
-// Reactions maps emoji to a map of username→reaction.
-type Reactions struct {
-	Reactions map[string]map[string]Reaction `json:"reactions"`
-}
-
-// Reaction records when a reaction was created.
-type Reaction struct {
-	Ctime int64 `json:"ctime"`
 }
 
 // BotInfo identifies a bot associated with a message.

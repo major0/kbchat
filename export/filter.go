@@ -3,7 +3,7 @@ package export
 import (
 	"strings"
 
-	"github.com/major0/keybase-export/keybase"
+	"github.com/major0/kbchat/keybase"
 )
 
 // FilterConversations returns conversations matching the given filters.

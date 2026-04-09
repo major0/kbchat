@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/major0/keybase-export/keybase"
+	"github.com/major0/kbchat/keybase"
 )
 
 // mockClient implements ClientAPI for testing.

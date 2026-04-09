@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/major0/keybase-export/keybase"
+	"github.com/major0/kbchat/keybase"
 )
 
 // AttachmentRef maps an attachment to its content-addressable file on disk.
@@ -33,7 +33,7 @@ func HashFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
@@ -49,16 +49,16 @@ func DownloadAttachment(client ClientAPI, channel keybase.ChatChannel, msgID int
 		return nil, fmt.Errorf("create temp: %w", err)
 	}
 	tmpName := tmp.Name()
-	tmp.Close()
+	_ = tmp.Close()
 
 	if err := client.DownloadAttachment(channel, msgID, tmpName); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return nil, err
 	}
 
 	hash, err := HashFile(tmpName)
 	if err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return nil, fmt.Errorf("hash file: %w", err)
 	}
 
@@ -67,10 +67,10 @@ func DownloadAttachment(client ClientAPI, channel keybase.ChatChannel, msgID int
 
 	if _, err := os.Stat(destPath); err == nil {
 		// Content already stored, discard temp
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 	} else {
 		if err := os.Rename(tmpName, destPath); err != nil {
-			os.Remove(tmpName)
+			_ = os.Remove(tmpName)
 			return nil, fmt.Errorf("rename to storage: %w", err)
 		}
 	}
@@ -83,12 +83,8 @@ func DownloadAttachment(client ClientAPI, channel keybase.ChatChannel, msgID int
 
 // WriteAttachmentManifest writes the attachments.json manifest.
 func WriteAttachmentManifest(path string, refs []AttachmentRef) error {
-	data, err := json.MarshalIndent(refs, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal manifest: %w", err)
-	}
-	data = append(data, '\n')
-	return os.WriteFile(path, data, 0644)
+	dir := filepath.Dir(path)
+	return writeJSON(dir, path, refs)
 }
 
 // ReadAttachmentManifest reads the attachments.json manifest.

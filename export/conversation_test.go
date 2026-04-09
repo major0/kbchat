@@ -6,7 +6,7 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/major0/keybase-export/keybase"
+	"github.com/major0/kbchat/keybase"
 )
 
 // Feature: keybase-go-export, Property 4: Message storage preserves all fields

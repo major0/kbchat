@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/major0/keybase-export/keybase"
+	"github.com/major0/kbchat/keybase"
 )
 
 // ConvDirPath derives the export directory path from conversation metadata.

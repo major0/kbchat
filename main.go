@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/major0/keybase-export/export"
-	"github.com/major0/keybase-export/keybase"
+	"github.com/major0/kbchat/export"
+	"github.com/major0/kbchat/keybase"
 )
 
 var errHelp = errors.New("help requested")
@@ -24,7 +24,7 @@ type Config struct {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `Usage: keybase-export [options] <destdir> [filters...]
+	fmt.Fprintf(os.Stderr, `Usage: kbchat export [options] <destdir> [filters...]
 
 Export Keybase chat history to a local directory.
 

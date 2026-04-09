@@ -5,7 +5,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/major0/keybase-export/keybase"
+	"github.com/major0/kbchat/keybase"
 )
 
 // Config holds export configuration.
@@ -54,7 +54,7 @@ func Run(cfg Config, listClient ListAPI, newClient ClientFactory) (Summary, erro
 	if err != nil {
 		return Summary{}, fmt.Errorf("list conversations: %w", err)
 	}
-	listClient.Close()
+	_ = listClient.Close()
 
 	// Filter
 	filtered := FilterConversations(convs, cfg.Filters, cfg.SelfUsername)
@@ -99,7 +99,7 @@ func Run(cfg Config, listClient ListAPI, newClient ClientFactory) (Summary, erro
 				mu.Unlock()
 				return
 			}
-			defer client.Close()
+			defer func() { _ = client.Close() }()
 
 			for conv := range jobs {
 				result := ExportConversation(client, conv, cfg.DestDir, cfg.SelfUsername, cfg.SkipAttachments, cfg.Verbose)

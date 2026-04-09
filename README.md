@@ -1,6 +1,6 @@
-# keybase-export
+# kbchat
 
-A Go CLI tool that exports Keybase chat history to a local directory tree.
+A Go CLI tool for Keybase chat history. Exports, views, searches, and lists conversations from a local directory tree.
 
 Replaces the TypeScript/Deno [keybase-export](https://github.com/eilvelia/keybase-export) with a native Go implementation that uses the Keybase chat API directly via `keybase chat api`.
 
@@ -21,13 +21,13 @@ Replaces the TypeScript/Deno [keybase-export](https://github.com/eilvelia/keybas
 ## Install
 
 ```sh
-go install github.com/major0/keybase-export@latest
+go install github.com/major0/kbchat@latest
 ```
 
 ## Usage
 
 ```
-keybase-export [options] <destdir> [filters...]
+kbchat export [options] <destdir> [filters...]
 ```
 
 ### Arguments
@@ -48,17 +48,17 @@ keybase-export [options] <destdir> [filters...]
 
 Export everything:
 ```sh
-keybase-export ~/keybase-backup
+kbchat export ~/keybase-backup
 ```
 
 Export specific conversations:
 ```sh
-keybase-export ~/keybase-backup Chat/alice Team/engineering
+kbchat export ~/keybase-backup Chat/alice Team/engineering
 ```
 
 Export without attachments, 8 workers:
 ```sh
-keybase-export -P 8 --skip-attachments ~/keybase-backup
+kbchat export -P 8 --skip-attachments ~/keybase-backup
 ```
 
 ## Output Structure

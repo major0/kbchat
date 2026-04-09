@@ -42,7 +42,7 @@ func NewClient() (*Client, error) {
 
 // Close terminates the subprocess.
 func (c *Client) Close() error {
-	c.stdin.Close()
+	_ = c.stdin.Close()
 	return c.cmd.Wait()
 }
 
