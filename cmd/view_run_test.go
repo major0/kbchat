@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -88,30 +89,15 @@ func testMsgs(n int, baseTime int64) []keybase.MsgSummary {
 	return msgs
 }
 
-// captureRunView calls runView and captures stdout output.
+// captureRunView calls runView and captures output.
 // Returns the output string and any error.
 func captureRunView(t *testing.T, args []string, storePath string, now time.Time) (string, error) {
 	t.Helper()
 	cfg := &config.Config{StorePath: storePath}
 
-	tmpFile, err := os.CreateTemp(t.TempDir(), "view-output-*.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	err = runView(args, cfg, tmpFile, now)
-	if err != nil {
-		_ = tmpFile.Close()
-		return "", err
-	}
-	_ = tmpFile.Close()
-
-	data, readErr := os.ReadFile(tmpFile.Name())
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	return string(data), nil
+	var buf bytes.Buffer
+	err := runView(args, cfg, &buf, now)
+	return buf.String(), err
 }
 
 func TestRunView(t *testing.T) {
@@ -155,14 +141,15 @@ func TestRunView(t *testing.T) {
 			args:    []string{"Chats/nonexistent"},
 			store:   emptyStore,
 			now:     now,
-			wantErr: "no matching conversation",
+			wantErr: "no matching conversations",
 		},
 		{
-			name:    "multiple matches → error",
-			args:    []string{"Chats/*alice*"},
-			store:   multiStore,
-			now:     now,
-			wantErr: "matched 2 conversations",
+			name:      "multiple matches → multi-conversation output",
+			args:      []string{"Chats/*alice*"},
+			store:     multiStore,
+			now:       now,
+			wantLines: -1,
+			wantSub:   "==> Chats/alice,bob <==",
 		},
 		{
 			name:      "valid filter → default 20 messages",
@@ -336,6 +323,64 @@ func TestRunViewVerbose(t *testing.T) {
 	if !strings.Contains(output, "(laptop)") {
 		t.Errorf("verbose output missing (laptop): %s", output)
 	}
+}
+
+func TestRunViewMultiConversation(t *testing.T) {
+	baseTime := int64(1718452800)
+	now := time.Unix(baseTime+3600, 0)
+
+	multiStore := makeMultiConvStore(t, map[string][]keybase.MsgSummary{
+		"alice,bob": {
+			{ID: 1, SentAt: baseTime, Sender: keybase.MsgSender{Username: "alice"},
+				Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "hello from bob chat"}}},
+		},
+		"alice,carol": {
+			{ID: 1, SentAt: baseTime, Sender: keybase.MsgSender{Username: "carol"},
+				Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "hello from carol chat"}}},
+		},
+	})
+
+	t.Run("glob matching multiple conversations shows headers and separator", func(t *testing.T) {
+		output, err := captureRunView(t, []string{"Chats/*alice*"}, multiStore, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output, "==> Chats/alice,bob <==") {
+			t.Errorf("missing alice,bob header:\n%s", output)
+		}
+		if !strings.Contains(output, "==> Chats/alice,carol <==") {
+			t.Errorf("missing alice,carol header:\n%s", output)
+		}
+		if !strings.Contains(output, "--\n") {
+			t.Errorf("missing -- separator between conversations:\n%s", output)
+		}
+	})
+
+	t.Run("single match has no header", func(t *testing.T) {
+		output, err := captureRunView(t, []string{"Chats/alice,bob"}, multiStore, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(output, "==>") {
+			t.Errorf("single conversation should not have header:\n%s", output)
+		}
+		if strings.Contains(output, "--") {
+			t.Errorf("single conversation should not have separator:\n%s", output)
+		}
+	})
+
+	t.Run("multiple filter args", func(t *testing.T) {
+		output, err := captureRunView(t, []string{"Chats/alice,bob", "Chats/alice,carol"}, multiStore, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output, "==> Chats/alice,bob <==") {
+			t.Errorf("missing alice,bob header:\n%s", output)
+		}
+		if !strings.Contains(output, "==> Chats/alice,carol <==") {
+			t.Errorf("missing alice,carol header:\n%s", output)
+		}
+	})
 }
 
 func TestRunViewMessageFormats(t *testing.T) {

@@ -71,15 +71,15 @@ Options:
   --help          Show this help message
 `, programName)
 	case "view":
-		fmt.Fprintf(os.Stderr, `Usage: %s view [options] <filter>
+		fmt.Fprintf(os.Stderr, `Usage: %s view [options] <filter> [<filter> ...]
 
-View messages from a conversation.
+View messages from one or more conversations.
 
 Arguments:
-  <filter>    Conversation filter
+  <filter>    Conversation filter (glob patterns supported)
 
 Options:
-  --count=<n>          Number of messages (default: 20; 0 for all)
+  --count=<n>          Number of messages per conversation (default: 20; 0 for all)
   --date=<YYYY-MM-DD>  Show messages from a specific day
   --after=<timestamp>  Show messages after timestamp
   --before=<timestamp> Show messages before timestamp
