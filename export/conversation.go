@@ -147,10 +147,8 @@ func Conversation(
 	return result
 }
 
-// backfillOrphans scans all existing messages for prev pointers to
-// missing messages, fetches them via GetMessages in batches, and
-// repeats until the full chain is resolved. Tracks state in memory
-// to avoid re-scanning disk on each iteration.
+// backfillOrphans fetches all missing messages by scanning the full ID
+// range [1, maxID] and batch-fetching any gaps via GetMessages.
 func backfillOrphans(
 	client ClientAPI,
 	conv keybase.ConvSummary,
@@ -161,13 +159,15 @@ func backfillOrphans(
 ) Result {
 	var result Result
 
-	// Build the set of existing message IDs from disk (one scan).
+	// Build the set of existing message IDs and find maxID.
 	msgsDir := filepath.Join(convDir, "messages")
 	entries, err := os.ReadDir(msgsDir)
 	if err != nil {
 		return result
 	}
+
 	existing := make(map[int]bool, len(entries))
+	maxID := 0
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -177,43 +177,36 @@ func backfillOrphans(
 			continue
 		}
 		existing[id] = true
-	}
-
-	// Collect all missing prev IDs from existing messages (one scan).
-	pending := make(map[int]bool)
-	for id := range existing {
-		msg, err := ReadMsg(convDir, id)
-		if err != nil || msg == nil {
-			continue
-		}
-		for _, p := range msg.Prev {
-			if !existing[p.ID] {
-				pending[p.ID] = true
-			}
+		if id > maxID {
+			maxID = id
 		}
 	}
 
-	if len(pending) == 0 {
+	if maxID == 0 {
+		return result
+	}
+
+	// Collect every missing ID in [1, maxID].
+	var missing []int
+	for id := 1; id <= maxID; id++ {
+		if !existing[id] {
+			missing = append(missing, id)
+		}
+	}
+
+	if len(missing) == 0 {
 		return result
 	}
 
 	if verbose {
-		log.Printf("backfilling %d missing messages (conv=%s)", len(pending), conv.ID)
+		log.Printf("backfilling %d missing messages in [1,%d] (conv=%s)", len(missing), maxID, conv.ID)
 	}
 
-	// Fetch missing messages in batches, enqueuing new prev pointers
-	// as they're discovered. No disk re-scan needed.
-	for len(pending) > 0 {
-		batch := make([]int, 0, min(len(pending), 50))
-		for id := range pending {
-			batch = append(batch, id)
-			if len(batch) >= 50 {
-				break
-			}
-		}
-		for _, id := range batch {
-			delete(pending, id)
-		}
+	// Fetch in batches of 50.
+	for len(missing) > 0 {
+		batchSize := min(len(missing), 50)
+		batch := missing[:batchSize]
+		missing = missing[batchSize:]
 
 		msgs, err := client.GetMessages(conv.ID, batch)
 		if err != nil {
@@ -221,7 +214,11 @@ func backfillOrphans(
 			return result
 		}
 
+		// Track which IDs the API actually returned.
+		returned := make(map[int]bool, len(msgs))
 		for _, msg := range msgs {
+			returned[msg.ID] = true
+
 			if existing[msg.ID] {
 				continue
 			}
@@ -233,14 +230,6 @@ func backfillOrphans(
 			}
 			result.MessagesExported++
 
-			// Enqueue this message's prev pointers.
-			for _, p := range msg.Prev {
-				if !existing[p.ID] {
-					pending[p.ID] = true
-				}
-			}
-
-			// Download attachments for backfilled messages.
 			if skipAttachments || msg.Content.Type != "attachment" || msg.Content.Attachment == nil {
 				continue
 			}
@@ -262,23 +251,25 @@ func backfillOrphans(
 			result.AttachmentsDownloaded++
 		}
 
-		// If the batch returned nothing useful (all IDs already existed
-		// or the API returned empty), check if we're making progress.
-		// Remaining pending IDs that the API can't resolve are
-		// permanently missing (deleted, ephemeral, etc.).
-		allPendingUnresolvable := true
-		for id := range pending {
-			if !existing[id] {
-				allPendingUnresolvable = false
-				break
+		// Write placeholders for IDs the API didn't return — these are
+		// permanently gone (deleted, ephemeral, etc.). The placeholder
+		// prevents re-requesting them on every export.
+		for _, id := range batch {
+			if returned[id] || existing[id] {
+				continue
 			}
-		}
-		if allPendingUnresolvable && len(pending) > 0 {
-			break
+			existing[id] = true
+			placeholder := keybase.MsgSummary{
+				ID:      id,
+				Content: keybase.MsgContent{Type: "deleted_placeholder"},
+			}
+			if err := WriteMsg(convDir, placeholder); err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("write placeholder %d: %w", id, err))
+			}
 		}
 	}
 
-	// Clean up stale orphans.json files now that gaps are filled.
+	// Clean up stale orphans.json files.
 	refreshOrphans(convDir)
 
 	return result

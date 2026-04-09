@@ -184,7 +184,9 @@ func TestConversation_Incremental(t *testing.T) {
 
 func TestConversation_OrphanDetection(t *testing.T) {
 	dir := t.TempDir()
-	// Export message 5 which has prev pointing to message 3 (which doesn't exist locally)
+	// Export message 5 which has prev pointing to message 3 (which doesn't exist locally).
+	// The backfill will try to fetch IDs 1-4 via GetMessages. The mock returns
+	// nothing, so placeholders are written for unfetchable IDs.
 	client := &mockClient{msgs: []keybase.MsgSummary{
 		{ID: 5, SentAtMs: 5000, Content: keybase.MsgContent{Type: "text"},
 			Prev: []keybase.Prev{{ID: 3, Hash: "abc"}}},
@@ -195,11 +197,22 @@ func TestConversation_OrphanDetection(t *testing.T) {
 	}
 
 	convDir := filepath.Join(dir, "Chats", "alice")
+
+	// Message 3 should now exist as a deleted_placeholder (backfill wrote it).
+	msg3, err := ReadMsg(convDir, 3)
+	if err != nil {
+		t.Fatalf("read msg 3: %v", err)
+	}
+	if msg3.Content.Type != "deleted_placeholder" {
+		t.Errorf("msg 3 type = %q, want deleted_placeholder", msg3.Content.Type)
+	}
+
+	// Orphans.json for message 5 should be cleaned up since 3 now exists.
 	orphans, err := ReadOrphans(convDir, 5)
 	if err != nil {
 		t.Fatalf("read orphans: %v", err)
 	}
-	if len(orphans) != 1 || orphans[0].ID != 3 {
-		t.Errorf("orphans = %+v, want [{ID:3 Hash:abc}]", orphans)
+	if len(orphans) != 0 {
+		t.Errorf("orphans = %+v, want empty (placeholder resolves the orphan)", orphans)
 	}
 }
