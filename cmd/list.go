@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"github.com/major0/kbchat/config"
 	"github.com/major0/kbchat/keybase"
 	"github.com/major0/kbchat/store"
+	"github.com/major0/optargs"
+	"golang.org/x/term"
 )
 
 // outputMode selects the list output format.
@@ -25,18 +28,12 @@ const (
 	modeCustom                         // --format=<string>
 )
 
-// Ensure outputMode constants are retained for RunList (task 4).
-var _ = [...]outputMode{modeSingleColumn, modeColumns, modeLong, modeCustom}
-
 // listOpts holds parsed options for the list subcommand.
 type listOpts struct {
 	Mode      outputMode
 	FormatStr string // raw --format value (only when Mode == modeCustom)
 	Verbose   bool
 }
-
-// Ensure listOpts is retained for RunList (task 4).
-var _ listOpts
 
 // token represents a parsed element of a custom format string.
 type token struct {
@@ -314,9 +311,227 @@ func headMsgID(conv store.ConvInfo) int {
 	return head
 }
 
+// convPath returns the relative path for a conversation, matching the
+// on-disk layout: Chats/<name> for Chat, Teams/<team>/<channel> for Team.
+func convPath(conv store.ConvInfo) string {
+	return store.ConvInfoPath(conv)
+}
+
+// formatSingleColumn writes one conversation per line to w.
+func formatSingleColumn(w io.Writer, convs []store.ConvInfo) {
+	for _, conv := range convs {
+		fmt.Fprintln(w, convPath(conv))
+	}
+}
+
+// formatColumns arranges conversations in columns fitting the given width,
+// filling top-to-bottom, left-to-right (like ls).
+func formatColumns(w io.Writer, convs []store.ConvInfo, width int) {
+	if len(convs) == 0 {
+		return
+	}
+
+	// Compute display strings and find the longest.
+	paths := make([]string, len(convs))
+	maxLen := 0
+	for i, conv := range convs {
+		paths[i] = convPath(conv)
+		if len(paths[i]) > maxLen {
+			maxLen = len(paths[i])
+		}
+	}
+
+	// Column width = longest entry + 2 spaces padding.
+	colWidth := maxLen + 2
+	if colWidth > width {
+		// Entries wider than terminal — fall back to single column.
+		for _, p := range paths {
+			fmt.Fprintln(w, p)
+		}
+		return
+	}
+
+	numCols := width / colWidth
+	numCols = max(numCols, 1)
+	numRows := (len(paths) + numCols - 1) / numCols
+
+	for row := range numRows {
+		for col := range numCols {
+			idx := col*numRows + row
+			if idx >= len(paths) {
+				continue
+			}
+			if col < numCols-1 && (col+1)*numRows+row < len(paths) {
+				fmt.Fprintf(w, "%-*s", colWidth, paths[idx])
+			} else {
+				fmt.Fprint(w, paths[idx])
+			}
+		}
+		fmt.Fprintln(w)
+	}
+}
+
+// formatLong writes one conversation per line in long format:
+// <type>\t<count>\t<created>\t<modified>\t<name>.
+func formatLong(w io.Writer, convs []store.ConvInfo, timeFmt string) {
+	for _, conv := range convs {
+		created, modified := convTimestamps(conv)
+		createdStr := "-"
+		if !created.IsZero() {
+			createdStr = created.Format(timeFmt)
+		}
+		modifiedStr := "-"
+		if !modified.IsZero() {
+			modifiedStr = modified.Format(timeFmt)
+		}
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n",
+			conv.Type, conv.MsgCount, createdStr, modifiedStr, convName(conv))
+	}
+}
+
+// terminalWidth returns the terminal width for stdout, or 80 as fallback.
+func terminalWidth() int {
+	fd := os.Stdout.Fd()
+	w, _, err := term.GetSize(int(fd)) //nolint:gosec // fd is stdout, no overflow risk
+	if err != nil || w <= 0 {
+		return 80
+	}
+	return w
+}
+
+// isStdoutTerminal reports whether stdout is connected to a terminal.
+func isStdoutTerminal() bool {
+	fd := os.Stdout.Fd()
+	return term.IsTerminal(int(fd)) //nolint:gosec // fd is stdout, no overflow risk
+}
+
+// parseListArgs parses list-specific flags from args using optargs.
+func parseListArgs(args []string) (*listOpts, []string, error) {
+	opts := &listOpts{}
+	modeSet := false
+
+	singleColFlag := &optargs.Flag{
+		Name:   "1",
+		HasArg: optargs.NoArgument,
+		Help:   "One conversation per line",
+	}
+	columnsFlag := &optargs.Flag{
+		Name:   "columns",
+		HasArg: optargs.NoArgument,
+		Help:   "Column format",
+	}
+	longFlag := &optargs.Flag{
+		Name:   "long",
+		HasArg: optargs.NoArgument,
+		Help:   "Long format",
+	}
+	formatFlag := &optargs.Flag{
+		Name:   "format",
+		HasArg: optargs.RequiredArgument,
+		Help:   "Output format (single-column, columns, long, or custom)",
+	}
+	verboseFlag := &optargs.Flag{
+		Name:   "verbose",
+		HasArg: optargs.NoArgument,
+		Help:   "Verbose output (alias for -l)",
+	}
+
+	shortOpts := map[byte]*optargs.Flag{
+		'1': singleColFlag,
+		'C': columnsFlag,
+		'l': longFlag,
+	}
+	longOpts := map[string]*optargs.Flag{
+		"format":  formatFlag,
+		"verbose": verboseFlag,
+	}
+
+	p, err := optargs.NewParser(optargs.ParserConfig{}, shortOpts, longOpts, args)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating list parser: %w", err)
+	}
+
+	for opt, err := range p.Options() {
+		if err != nil {
+			return nil, nil, fmt.Errorf("parsing list flags: %w", err)
+		}
+		switch opt.Name {
+		case "1":
+			opts.Mode = modeSingleColumn
+			modeSet = true
+		case "columns", "C":
+			opts.Mode = modeColumns
+			modeSet = true
+		case "long", "l":
+			opts.Mode = modeLong
+			modeSet = true
+		case "verbose":
+			opts.Verbose = true
+			opts.Mode = modeLong
+			modeSet = true
+		case "format":
+			modeSet = true
+			switch opt.Arg {
+			case "single-column":
+				opts.Mode = modeSingleColumn
+			case "columns":
+				opts.Mode = modeColumns
+			case "long":
+				opts.Mode = modeLong
+			default:
+				opts.Mode = modeCustom
+				opts.FormatStr = opt.Arg
+			}
+		}
+	}
+
+	// Default mode: -C when TTY, -1 otherwise.
+	if !modeSet {
+		if isStdoutTerminal() {
+			opts.Mode = modeColumns
+		} else {
+			opts.Mode = modeSingleColumn
+		}
+	}
+
+	return opts, p.Args, nil
+}
+
 // RunList executes the list subcommand.
 // args contains the remaining arguments after subcommand dispatch.
-func RunList(_ []string, _ *config.Config) error {
-	fmt.Println("list: not implemented")
+func RunList(args []string, cfg *config.Config) error {
+	opts, filters, err := parseListArgs(args)
+	if err != nil {
+		return err
+	}
+
+	convs, err := store.ScanConversations(cfg.StorePath)
+	if err != nil {
+		return fmt.Errorf("scanning conversations: %w", err)
+	}
+
+	convs = store.FilterConvInfos(convs, filters)
+
+	if len(convs) == 0 {
+		fmt.Fprintln(os.Stderr, "no conversations found")
+		return nil
+	}
+
+	w := os.Stdout
+	switch opts.Mode {
+	case modeSingleColumn:
+		formatSingleColumn(w, convs)
+	case modeColumns:
+		formatColumns(w, convs, terminalWidth())
+	case modeLong:
+		formatLong(w, convs, cfg.TimeFmt())
+	case modeCustom:
+		tokens := parseFormatString(opts.FormatStr)
+		timeFmt := cfg.TimeFmt()
+		for _, conv := range convs {
+			fmt.Fprintln(w, formatConv(tokens, conv, timeFmt))
+		}
+	}
+
 	return nil
 }

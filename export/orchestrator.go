@@ -78,10 +78,7 @@ func Run(cfg Config, listClient ListAPI, newClient ClientFactory) (Summary, erro
 	done := 0
 
 	for range cfg.Parallel {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			// Panic recovery
 			defer func() {
 				if r := recover(); r != nil {
@@ -111,7 +108,7 @@ func Run(cfg Config, listClient ListAPI, newClient ClientFactory) (Summary, erro
 					done, total, conv.ID, result.MessagesExported, result.AttachmentsDownloaded, len(result.Errors))
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

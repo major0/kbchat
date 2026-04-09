@@ -16,7 +16,7 @@ func FilterConvInfos(convs []ConvInfo, filters []string) []ConvInfo {
 
 	var result []ConvInfo
 	for _, conv := range convs {
-		p := convInfoPath(conv)
+		p := ConvInfoPath(conv)
 		for _, f := range filters {
 			if matchesConvFilter(p, f) {
 				result = append(result, conv)
@@ -27,12 +27,12 @@ func FilterConvInfos(convs []ConvInfo, filters []string) []ConvInfo {
 	return result
 }
 
-// convInfoPath builds the relative path for a ConvInfo, matching the
+// ConvInfoPath builds the relative path for a ConvInfo, matching the
 // directory layout used by export.ConvDirPath:
 //
 //	Chat → "Chats/<Name>"
 //	Team → "Teams/<Name>/<Channel>"
-func convInfoPath(conv ConvInfo) string {
+func ConvInfoPath(conv ConvInfo) string {
 	switch conv.Type {
 	case "Team":
 		return path.Join("Teams", conv.Name, conv.Channel)
