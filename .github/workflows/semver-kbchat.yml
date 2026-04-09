@@ -1,0 +1,25 @@
+name: Semver kbchat
+
+on:
+  create:
+  push:
+    branches:
+      - 'v[0-9]+.[0-9]+'
+
+jobs:
+  semver:
+    uses: ./.github/workflows/semver.yml
+    permissions:
+      contents: write
+    with:
+      prefix: 'v'
+      ref-pattern: 'refs/heads/v'
+
+  release:
+    needs: semver
+    if: needs.semver.outputs.tag != ''
+    uses: ./.github/workflows/release.yml
+    permissions:
+      contents: write
+    with:
+      tag: ${{ needs.semver.outputs.tag }}
