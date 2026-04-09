@@ -14,6 +14,7 @@ import (
 	"github.com/major0/kbchat/config"
 	"github.com/major0/kbchat/export"
 	"github.com/major0/kbchat/keybase"
+	"github.com/major0/kbchat/logfile"
 	"github.com/major0/optargs"
 )
 
@@ -165,6 +166,32 @@ func runExport(
 	opts, err := parseExportArgs(args)
 	if err != nil {
 		return err
+	}
+
+	// Set up log file if --log-file is specified (Req 3.9–3.12)
+	if opts.LogFile != "" {
+		lf, err := logfile.Open(opts.LogFile)
+		if err != nil {
+			return fmt.Errorf("setting up log file: %w", err)
+		}
+		defer func() { _ = lf.Close() }()
+
+		// Disable default log timestamp; LogFile.Write prepends ISO 8601
+		log.SetFlags(0)
+		log.SetOutput(lf)
+
+		// SIGHUP reopens the log file (logrotate support)
+		sighup := make(chan os.Signal, 1)
+		signal.Notify(sighup, syscall.SIGHUP)
+		go func() {
+			for range sighup {
+				if err := lf.Reopen(); err != nil {
+					// Best effort: write to stderr since log file may be broken
+					fmt.Fprintf(os.Stderr, "SIGHUP reopen failed: %v\n", err)
+				}
+			}
+		}()
+		defer signal.Stop(sighup)
 	}
 
 	// Resolve destdir: positional arg overrides config store_path (Req 3.2, 3.3)
