@@ -1,12 +1,17 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/major0/dateparse"
 	"github.com/major0/kbchat/config"
 	"github.com/major0/kbchat/keybase"
+	"github.com/major0/kbchat/store"
+	"github.com/major0/optargs"
 )
 
 // viewOpts holds parsed options for the view subcommand.
@@ -107,9 +112,153 @@ func applyCountLimit(msgs []keybase.MsgSummary, count int, afterSet bool) []keyb
 	return msgs[len(msgs)-count:]
 }
 
+// parseViewArgs parses view-specific flags from args using optargs.
+// Returns the parsed options or an error.
+func parseViewArgs(args []string) (*viewOpts, error) {
+	opts := &viewOpts{Count: 20}
+
+	countFlag := &optargs.Flag{
+		Name:   "count",
+		HasArg: optargs.RequiredArgument,
+		Help:   "Number of messages (default: 20; 0 for all)",
+	}
+	afterFlag := &optargs.Flag{
+		Name:   "after",
+		HasArg: optargs.RequiredArgument,
+		Help:   "Show messages after timestamp",
+	}
+	beforeFlag := &optargs.Flag{
+		Name:   "before",
+		HasArg: optargs.RequiredArgument,
+		Help:   "Show messages before timestamp",
+	}
+	dateFlag := &optargs.Flag{
+		Name:   "date",
+		HasArg: optargs.RequiredArgument,
+		Help:   "Show messages from a specific day (YYYY-MM-DD)",
+	}
+	verboseFlag := &optargs.Flag{
+		Name:   "verbose",
+		HasArg: optargs.NoArgument,
+		Help:   "Include message IDs and metadata",
+	}
+
+	shortOpts := map[byte]*optargs.Flag{
+		'n': countFlag,
+	}
+	longOpts := map[string]*optargs.Flag{
+		"count":   countFlag,
+		"after":   afterFlag,
+		"before":  beforeFlag,
+		"date":    dateFlag,
+		"verbose": verboseFlag,
+	}
+
+	p, err := optargs.NewParser(optargs.ParserConfig{}, shortOpts, longOpts, args)
+	if err != nil {
+		return nil, fmt.Errorf("creating view parser: %w", err)
+	}
+
+	for opt, err := range p.Options() {
+		if err != nil {
+			return nil, fmt.Errorf("parsing view flags: %w", err)
+		}
+		switch opt.Name {
+		case "count", "n":
+			n, perr := strconv.Atoi(opt.Arg)
+			if perr != nil {
+				return nil, fmt.Errorf("invalid --count value: %q", opt.Arg)
+			}
+			if n < 0 {
+				return nil, fmt.Errorf("invalid --count value: %q (must be >= 0)", opt.Arg)
+			}
+			opts.Count = n
+		case "after":
+			opts.After = opt.Arg
+		case "before":
+			opts.Before = opt.Arg
+		case "date":
+			opts.Date = opt.Arg
+		case "verbose":
+			opts.Verbose = true
+		}
+	}
+
+	// Positional <filter> argument required.
+	if len(p.Args) == 0 {
+		return nil, errors.New("missing required <filter> argument")
+	}
+	opts.Filter = p.Args[0]
+
+	return opts, nil
+}
+
 // RunView executes the view subcommand.
 // args contains the remaining arguments after subcommand dispatch.
-func RunView(_ []string, _ *config.Config) error {
-	fmt.Println("view: not implemented")
+func RunView(args []string, cfg *config.Config) error {
+	return runView(args, cfg, os.Stdout, time.Now())
+}
+
+// runView is the internal implementation of RunView, accepting injectable
+// dependencies for testing. w is the output writer, now is the reference
+// time for query resolution.
+func runView(args []string, cfg *config.Config, w *os.File, now time.Time) error {
+	opts, err := parseViewArgs(args)
+	if err != nil {
+		return err
+	}
+
+	after, before, count, rangeMode, err := resolveQuery(*opts, now)
+	if err != nil {
+		return err
+	}
+
+	// Scan and filter conversations.
+	convs, err := store.ScanConversations(cfg.StorePath)
+	if err != nil {
+		return fmt.Errorf("scanning conversations: %w", err)
+	}
+
+	matches := store.FilterConvInfos(convs, []string{opts.Filter})
+
+	switch len(matches) {
+	case 0:
+		return fmt.Errorf("no matching conversation for %q", opts.Filter)
+	case 1:
+		// Exactly one match — proceed.
+	default:
+		// Multiple matches — list them and error.
+		fmt.Fprintf(os.Stderr, "multiple conversations match %q:\n", opts.Filter)
+		for _, m := range matches {
+			fmt.Fprintf(os.Stderr, "  %s\n", store.ConvInfoPath(m))
+		}
+		return fmt.Errorf("filter %q matched %d conversations (expected 1)", opts.Filter, len(matches))
+	}
+
+	conv := matches[0]
+
+	// Read messages: optimized path when no timestamp filters.
+	var msgs []keybase.MsgSummary
+	if after == nil && before == nil && !rangeMode {
+		// No timestamp filtering needed — read only the last `count` from disk.
+		msgs, err = store.ReadMessages(conv.Dir, count)
+	} else {
+		// Timestamp filtering required — read all, filter in memory.
+		msgs, err = store.ReadMessages(conv.Dir, 0)
+	}
+	if err != nil {
+		return fmt.Errorf("reading messages: %w", err)
+	}
+
+	// Apply timestamp filtering and count limiting.
+	msgs = filterByTimestamp(msgs, after, before)
+	msgs = applyCountLimit(msgs, count, after != nil)
+
+	// Format and print each message.
+	timeFmt := cfg.TimeFmt()
+	for _, msg := range msgs {
+		fmt.Fprintln(w, FormatMsg(msg, timeFmt, opts.Verbose))
+	}
+
 	return nil
 }
