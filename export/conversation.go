@@ -202,9 +202,9 @@ func backfillOrphans(
 		log.Printf("backfilling %d missing messages in [1,%d] (conv=%s)", len(missing), maxID, conv.ID)
 	}
 
-	// Fetch in batches of 50.
+	// Fetch in batches of 500.
 	for len(missing) > 0 {
-		batchSize := min(len(missing), 50)
+		batchSize := min(len(missing), 500)
 		batch := missing[:batchSize]
 		missing = missing[batchSize:]
 

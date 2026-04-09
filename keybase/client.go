@@ -159,11 +159,11 @@ func (c *Client) ReadConversation(convID string, known func(int) bool) ([]MsgSum
 	}
 
 	for len(pending) > 0 {
-		// Collect up to 50 IDs per batch to avoid oversized requests.
-		batch := make([]int, 0, min(len(pending), 50))
+		// Collect up to 500 IDs per batch.
+		batch := make([]int, 0, min(len(pending), 500))
 		for id := range pending {
 			batch = append(batch, id)
-			if len(batch) >= 50 {
+			if len(batch) >= 500 {
 				break
 			}
 		}
