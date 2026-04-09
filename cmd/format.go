@@ -6,8 +6,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/major0/dateparse"
 	"github.com/major0/kbchat/keybase"
 )
+
+// parseTimestamp parses a raw timestamp string using dateparse.
+// Returns nil if raw is empty. Returns a wrapped error on parse failure.
+func parseTimestamp(raw, flagName string, now time.Time) (*time.Time, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	t, err := dateparse.Parse(raw, now)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", flagName, err)
+	}
+	return &t, nil
+}
 
 // FormatMsg formats a single message in IRC-log style.
 // Text messages: [<timestamp>] <<username>> <body>

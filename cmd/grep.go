@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/major0/dateparse"
 	"github.com/major0/kbchat/config"
 	"github.com/major0/kbchat/keybase"
 	"github.com/major0/kbchat/store"
@@ -266,20 +265,13 @@ func runGrep(args []string, cfg *config.Config, w io.Writer, now time.Time) erro
 	}
 
 	// Parse --after/--before timestamps.
-	var after, before *time.Time
-	if opts.After != "" {
-		t, perr := dateparse.Parse(opts.After, now)
-		if perr != nil {
-			return fmt.Errorf("parsing --after: %w", perr)
-		}
-		after = &t
+	after, err := parseTimestamp(opts.After, "--after", now)
+	if err != nil {
+		return err
 	}
-	if opts.Before != "" {
-		t, perr := dateparse.Parse(opts.Before, now)
-		if perr != nil {
-			return fmt.Errorf("parsing --before: %w", perr)
-		}
-		before = &t
+	before, err := parseTimestamp(opts.Before, "--before", now)
+	if err != nil {
+		return err
 	}
 
 	// Scan and filter conversations.

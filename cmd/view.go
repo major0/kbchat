@@ -32,7 +32,6 @@ type viewOpts struct {
 // The caller (flag parser) sets opts.Count to 20 as default. Passing
 // --count 0 explicitly sets it to 0, meaning unlimited.
 func resolveQuery(opts viewOpts, now time.Time) (*time.Time, *time.Time, int, bool, error) {
-	var after, before *time.Time
 	count := opts.Count
 
 	// --date takes priority: expands to after+before range.
@@ -48,21 +47,15 @@ func resolveQuery(opts viewOpts, now time.Time) (*time.Time, *time.Time, int, bo
 	}
 
 	// Parse --after if set.
-	if opts.After != "" {
-		t, parseErr := dateparse.Parse(opts.After, now)
-		if parseErr != nil {
-			return nil, nil, 0, false, fmt.Errorf("parsing --after: %w", parseErr)
-		}
-		after = &t
+	after, err := parseTimestamp(opts.After, "--after", now)
+	if err != nil {
+		return nil, nil, 0, false, err
 	}
 
 	// Parse --before if set.
-	if opts.Before != "" {
-		t, parseErr := dateparse.Parse(opts.Before, now)
-		if parseErr != nil {
-			return nil, nil, 0, false, fmt.Errorf("parsing --before: %w", parseErr)
-		}
-		before = &t
+	before, err := parseTimestamp(opts.Before, "--before", now)
+	if err != nil {
+		return nil, nil, 0, false, err
 	}
 
 	// Both after+before → range mode, count ignored.

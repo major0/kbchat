@@ -157,14 +157,33 @@ func convName(conv store.ConvInfo) string {
 func formatConv(tokens []token, conv store.ConvInfo, timeFmt string) string {
 	var b strings.Builder
 
-	// Lazy timestamp cache: computed at most once per call.
+	// Lazy caches: computed at most once per call.
 	var tsLoaded bool
 	var created, modified time.Time
-	loadTS := func() {
-		if !tsLoaded {
-			created, modified = convTimestamps(conv)
-			tsLoaded = true
+	var rangeLoaded bool
+	var minID, maxID int
+
+	loadRange := func() {
+		if !rangeLoaded {
+			minID, maxID = convMsgRange(conv)
+			rangeLoaded = true
 		}
+	}
+	loadTS := func() {
+		if tsLoaded {
+			return
+		}
+		loadRange()
+		if maxID >= 0 {
+			msgsDir := filepath.Join(conv.Dir, "messages")
+			created = readMsgTime(msgsDir, minID)
+			if minID == maxID {
+				modified = created
+			} else {
+				modified = readMsgTime(msgsDir, maxID)
+			}
+		}
+		tsLoaded = true
 	}
 
 	for _, tok := range tokens {
@@ -194,13 +213,11 @@ func formatConv(tokens []token, conv store.ConvInfo, timeFmt string) string {
 				b.WriteString(modified.Format(timeFmt))
 			}
 		case tokenHead:
-			// Head is the highest message ID. We can derive it from
-			// the messages dir without reading message.json.
-			head := headMsgID(conv)
-			if head < 0 {
+			loadRange()
+			if maxID < 0 {
 				b.WriteByte('-')
 			} else {
-				b.WriteString(strconv.Itoa(head))
+				b.WriteString(strconv.Itoa(maxID))
 			}
 		case tokenField:
 			b.WriteString(resolveField(tok.Literal, conv))
@@ -228,19 +245,17 @@ func resolveField(name string, conv store.ConvInfo) string {
 	}
 }
 
-// convTimestamps returns the first and last message timestamps for a conversation.
-// It reads the messages/ directory, finds the min and max numeric IDs, and reads
-// only those two message.json files for their sent_at fields.
-// Returns zero times on any read failure.
-func convTimestamps(conv store.ConvInfo) (time.Time, time.Time) {
+// convMsgRange scans the messages/ directory once and returns the min and max
+// numeric message IDs. Returns (-1, -1) if no messages are found.
+func convMsgRange(conv store.ConvInfo) (int, int) {
 	msgsDir := filepath.Join(conv.Dir, "messages")
 	entries, err := os.ReadDir(msgsDir)
 	if err != nil {
-		return time.Time{}, time.Time{}
+		return -1, -1
 	}
 
-	minID := math.MaxInt
-	maxID := -1
+	lo := math.MaxInt
+	hi := -1
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -249,19 +264,30 @@ func convTimestamps(conv store.ConvInfo) (time.Time, time.Time) {
 		if err != nil {
 			continue
 		}
-		if id < minID {
-			minID = id
+		if id < lo {
+			lo = id
 		}
-		if id > maxID {
-			maxID = id
+		if id > hi {
+			hi = id
 		}
 	}
 
+	if hi < 0 {
+		return -1, -1
+	}
+	return lo, hi
+}
+
+// convTimestamps returns the first and last message timestamps for a conversation.
+// It reads only the min and max message.json files for their sent_at fields.
+// Returns zero times on any read failure.
+func convTimestamps(conv store.ConvInfo) (time.Time, time.Time) {
+	minID, maxID := convMsgRange(conv)
 	if maxID < 0 {
-		// No numeric directories found.
 		return time.Time{}, time.Time{}
 	}
 
+	msgsDir := filepath.Join(conv.Dir, "messages")
 	created := readMsgTime(msgsDir, minID)
 	if minID == maxID {
 		return created, created
@@ -272,8 +298,8 @@ func convTimestamps(conv store.ConvInfo) (time.Time, time.Time) {
 // readMsgTime reads a single message.json and returns its sent_at as a time.Time.
 // Returns zero time on any failure.
 func readMsgTime(msgsDir string, id int) time.Time {
-	path := filepath.Join(msgsDir, strconv.Itoa(id), "message.json")
-	data, err := os.ReadFile(path)
+	p := filepath.Join(msgsDir, strconv.Itoa(id), "message.json")
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return time.Time{}
 	}
@@ -285,30 +311,6 @@ func readMsgTime(msgsDir string, id int) time.Time {
 		return time.Time{}
 	}
 	return time.Unix(msg.SentAt, 0)
-}
-
-// headMsgID returns the highest numeric message ID in a conversation's
-// messages/ directory, or -1 if none found.
-func headMsgID(conv store.ConvInfo) int {
-	msgsDir := filepath.Join(conv.Dir, "messages")
-	entries, err := os.ReadDir(msgsDir)
-	if err != nil {
-		return -1
-	}
-	head := -1
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		id, err := strconv.Atoi(e.Name())
-		if err != nil {
-			continue
-		}
-		if id > head {
-			head = id
-		}
-	}
-	return head
 }
 
 // convPath returns the relative path for a conversation, matching the
