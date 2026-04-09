@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -267,5 +269,184 @@ func TestRunExportSingleShot(t *testing.T) {
 	}
 	if called != 1 {
 		t.Errorf("expected export.Run called once, got %d", called)
+	}
+}
+
+// --- Integration tests for export flow (Task 10.1) ---
+
+// mockExportListClient implements export.ListAPI for integration tests.
+type mockExportListClient struct {
+	convs []keybase.ConvSummary
+}
+
+func (m *mockExportListClient) ListConversations() ([]keybase.ConvSummary, error) {
+	return m.convs, nil
+}
+func (m *mockExportListClient) Close() error { return nil }
+
+// mockExportWorkerClient implements export.ClientAPI for integration tests.
+type mockExportWorkerClient struct {
+	msgs map[string][]keybase.MsgSummary
+}
+
+func (m *mockExportWorkerClient) ReadConversation(convID string, known func(int) bool) ([]keybase.MsgSummary, error) {
+	msgs := m.msgs[convID]
+	var result []keybase.MsgSummary
+	for _, msg := range msgs {
+		if known != nil && known(msg.ID) {
+			break
+		}
+		result = append(result, msg)
+	}
+	return result, nil
+}
+
+func (m *mockExportWorkerClient) DownloadAttachment(_ keybase.ChatChannel, _ int, _ string) error {
+	return nil
+}
+
+func (m *mockExportWorkerClient) Close() error { return nil }
+
+func TestIntegrationExportDestdirFromConfig(t *testing.T) {
+	destDir := t.TempDir()
+	cfg := &config.Config{StorePath: destDir}
+
+	convs := []keybase.ConvSummary{
+		{ID: "dm1", Channel: keybase.ChatChannel{Name: "testuser,alice", MembersType: "impteamnative"}},
+	}
+	msgs := map[string][]keybase.MsgSummary{
+		"dm1": {
+			{ID: 2, SentAtMs: 2000, Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "hi"}}},
+			{ID: 1, SentAtMs: 1000, Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "hello"}}},
+		},
+	}
+
+	lc := &mockExportListClient{convs: convs}
+	wc := &mockExportWorkerClient{msgs: msgs}
+
+	mockRun := func(cfg export.Config, listClient export.ListAPI, newClient export.ClientFactory) (export.Summary, error) {
+		return export.Run(cfg, lc, func() (export.ClientAPI, error) { return wc, nil })
+	}
+
+	err := runExport(
+		[]string{}, // no destdir arg → uses config store_path
+		cfg, "testuser",
+		func() (*keybase.Client, error) { return nil, nil },
+		nil, mockRun,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify messages were exported to config store_path
+	msgPath := filepath.Join(destDir, "Chats", "alice", "messages", "1", "message.json")
+	if _, err := os.Stat(msgPath); err != nil {
+		t.Errorf("message 1 not exported: %v", err)
+	}
+	msgPath2 := filepath.Join(destDir, "Chats", "alice", "messages", "2", "message.json")
+	if _, err := os.Stat(msgPath2); err != nil {
+		t.Errorf("message 2 not exported: %v", err)
+	}
+}
+
+func TestIntegrationExportDestdirOverride(t *testing.T) {
+	configDir := t.TempDir()
+	overrideDir := t.TempDir()
+	cfg := &config.Config{StorePath: configDir}
+
+	convs := []keybase.ConvSummary{
+		{ID: "dm1", Channel: keybase.ChatChannel{Name: "testuser,bob", MembersType: "impteamnative"}},
+	}
+	msgs := map[string][]keybase.MsgSummary{
+		"dm1": {
+			{ID: 1, SentAtMs: 1000, Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "hey"}}},
+		},
+	}
+
+	lc := &mockExportListClient{convs: convs}
+	wc := &mockExportWorkerClient{msgs: msgs}
+
+	mockRun := func(cfg export.Config, listClient export.ListAPI, newClient export.ClientFactory) (export.Summary, error) {
+		return export.Run(cfg, lc, func() (export.ClientAPI, error) { return wc, nil })
+	}
+
+	err := runExport(
+		[]string{overrideDir}, // positional destdir overrides config
+		cfg, "testuser",
+		func() (*keybase.Client, error) { return nil, nil },
+		nil, mockRun,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify messages exported to override dir, not config dir
+	msgPath := filepath.Join(overrideDir, "Chats", "bob", "messages", "1", "message.json")
+	if _, err := os.Stat(msgPath); err != nil {
+		t.Errorf("message not exported to override dir: %v", err)
+	}
+
+	// Config dir should be empty (no export there)
+	entries, _ := os.ReadDir(configDir)
+	if len(entries) != 0 {
+		t.Errorf("config dir should be empty, has %d entries", len(entries))
+	}
+}
+
+func TestIntegrationExportWithFilters(t *testing.T) {
+	destDir := t.TempDir()
+	cfg := &config.Config{StorePath: destDir}
+
+	convs := []keybase.ConvSummary{
+		{ID: "dm1", Channel: keybase.ChatChannel{Name: "testuser,alice", MembersType: "impteamnative"}},
+		{ID: "dm2", Channel: keybase.ChatChannel{Name: "testuser,bob", MembersType: "impteamnative"}},
+		{ID: "team1", Channel: keybase.ChatChannel{Name: "eng", MembersType: "team", TopicName: "general"}},
+	}
+	msgs := map[string][]keybase.MsgSummary{
+		"dm1": {
+			{ID: 1, SentAtMs: 1000, Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "hi alice"}}},
+		},
+		"dm2": {
+			{ID: 1, SentAtMs: 1000, Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "hi bob"}}},
+		},
+		"team1": {
+			{ID: 1, SentAtMs: 1000, Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "team msg"}}},
+		},
+	}
+
+	lc := &mockExportListClient{convs: convs}
+	wc := &mockExportWorkerClient{msgs: msgs}
+
+	mockRun := func(cfg export.Config, listClient export.ListAPI, newClient export.ClientFactory) (export.Summary, error) {
+		return export.Run(cfg, lc, func() (export.ClientAPI, error) { return wc, nil })
+	}
+
+	// Filter to only Chat/alice
+	err := runExport(
+		[]string{destDir, "Chat/alice"},
+		cfg, "testuser",
+		func() (*keybase.Client, error) { return nil, nil },
+		nil, mockRun,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Alice's messages should exist
+	alicePath := filepath.Join(destDir, "Chats", "alice", "messages", "1", "message.json")
+	if _, err := os.Stat(alicePath); err != nil {
+		t.Errorf("alice message not exported: %v", err)
+	}
+
+	// Bob's messages should NOT exist (filtered out)
+	bobPath := filepath.Join(destDir, "Chats", "bob", "messages", "1", "message.json")
+	if _, err := os.Stat(bobPath); !os.IsNotExist(err) {
+		t.Errorf("bob message should not be exported, got err: %v", err)
+	}
+
+	// Team messages should NOT exist (filtered out)
+	teamPath := filepath.Join(destDir, "Teams", "eng", "general", "messages", "1", "message.json")
+	if _, err := os.Stat(teamPath); !os.IsNotExist(err) {
+		t.Errorf("team message should not be exported, got err: %v", err)
 	}
 }
