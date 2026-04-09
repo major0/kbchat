@@ -1,145 +1,137 @@
 package main
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/major0/optargs"
 )
 
-func TestParseArgs(t *testing.T) {
+func TestNewRootParser(t *testing.T) {
+	p, verbose, err := newRootParser([]string{"--verbose", "help"})
+	if err != nil {
+		t.Fatalf("newRootParser: %v", err)
+	}
+
+	// Iterate to process flags and dispatch subcommand
+	for _, err := range p.Options() {
+		if err != nil {
+			t.Fatalf("Options: %v", err)
+		}
+	}
+
+	if !*verbose {
+		t.Error("expected verbose=true after --verbose")
+	}
+
+	subcmd, _ := p.ActiveCommand()
+	if subcmd != "help" {
+		t.Errorf("ActiveCommand = %q, want %q", subcmd, "help")
+	}
+}
+
+func TestNewRootParserSubcommands(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    []string
-		want    *Config
-		wantErr string
+		wantCmd string
 	}{
-		{
-			name: "destdir only",
-			args: []string{"/tmp/export"},
-			want: &Config{DestDir: "/tmp/export", Parallel: 4},
-		},
-		{
-			name: "destdir with filters",
-			args: []string{"/tmp/export", "Chat/alice,bob", "Team/myteam"},
-			want: &Config{
-				DestDir:  "/tmp/export",
-				Filters:  []string{"Chat/alice,bob", "Team/myteam"},
-				Parallel: 4,
-			},
-		},
-		{
-			name: "parallel short flag",
-			args: []string{"-P", "8", "/tmp/export"},
-			want: &Config{DestDir: "/tmp/export", Parallel: 8},
-		},
-		{
-			name: "parallel long flag",
-			args: []string{"--parallel=16", "/tmp/export"},
-			want: &Config{DestDir: "/tmp/export", Parallel: 16},
-		},
-		{
-			name: "default parallel is 4",
-			args: []string{"/tmp/export"},
-			want: &Config{DestDir: "/tmp/export", Parallel: 4},
-		},
-		{
-			name: "verbose flag",
-			args: []string{"--verbose", "/tmp/export"},
-			want: &Config{DestDir: "/tmp/export", Parallel: 4, Verbose: true},
-		},
-		{
-			name: "skip-attachments flag",
-			args: []string{"--skip-attachments", "/tmp/export"},
-			want: &Config{DestDir: "/tmp/export", Parallel: 4, SkipAttachments: true},
-		},
-		{
-			name: "all flags combined",
-			args: []string{"--verbose", "--skip-attachments", "-P", "2", "/tmp/export", "Chat/alice"},
-			want: &Config{
-				DestDir:         "/tmp/export",
-				Filters:         []string{"Chat/alice"},
-				Parallel:        2,
-				Verbose:         true,
-				SkipAttachments: true,
-			},
-		},
-		{
-			name:    "missing destdir",
-			args:    []string{},
-			wantErr: "destdir is required",
-		},
-		{
-			name:    "help flag",
-			args:    []string{"--help"},
-			wantErr: "help",
-		},
-		{
-			name:    "short help flag",
-			args:    []string{"-h"},
-			wantErr: "help",
-		},
-		{
-			name:    "unknown flag",
-			args:    []string{"--unknown", "/tmp/export"},
-			wantErr: "unknown flag: --unknown",
-		},
-		{
-			name:    "parallel missing value",
-			args:    []string{"-P"},
-			wantErr: "-P requires a value",
-		},
-		{
-			name:    "parallel invalid value",
-			args:    []string{"-P", "abc", "/tmp/export"},
-			wantErr: "invalid parallel value: abc",
-		},
-		{
-			name:    "parallel zero",
-			args:    []string{"-P", "0", "/tmp/export"},
-			wantErr: "invalid parallel value: 0",
-		},
+		{"export", []string{"export"}, "export"},
+		{"list", []string{"list"}, "list"},
+		{"ls alias", []string{"ls"}, "ls"},
+		{"view", []string{"view"}, "view"},
+		{"search", []string{"search"}, "search"},
+		{"help", []string{"help"}, "help"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseArgs(tt.args)
-			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error %q, got nil", tt.wantErr)
-				}
-				if tt.wantErr == "help" {
-					if !errors.Is(err, errHelp) {
-						t.Fatalf("expected errHelp, got %q", err.Error())
-					}
-					return
-				}
-				if err.Error() != tt.wantErr {
-					t.Fatalf("expected error %q, got %q", tt.wantErr, err.Error())
-				}
-				return
-			}
+			p, _, err := newRootParser(tt.args)
 			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+				t.Fatalf("newRootParser: %v", err)
 			}
-			if got.DestDir != tt.want.DestDir {
-				t.Errorf("DestDir = %q, want %q", got.DestDir, tt.want.DestDir)
-			}
-			if got.Parallel != tt.want.Parallel {
-				t.Errorf("Parallel = %d, want %d", got.Parallel, tt.want.Parallel)
-			}
-			if got.Verbose != tt.want.Verbose {
-				t.Errorf("Verbose = %v, want %v", got.Verbose, tt.want.Verbose)
-			}
-			if got.SkipAttachments != tt.want.SkipAttachments {
-				t.Errorf("SkipAttachments = %v, want %v", got.SkipAttachments, tt.want.SkipAttachments)
-			}
-			if len(got.Filters) != len(tt.want.Filters) {
-				t.Errorf("Filters len = %d, want %d", len(got.Filters), len(tt.want.Filters))
-			} else {
-				for i := range got.Filters {
-					if got.Filters[i] != tt.want.Filters[i] {
-						t.Errorf("Filters[%d] = %q, want %q", i, got.Filters[i], tt.want.Filters[i])
-					}
+			for _, err := range p.Options() {
+				if err != nil {
+					t.Fatalf("Options: %v", err)
 				}
+			}
+			subcmd, _ := p.ActiveCommand()
+			if subcmd != tt.wantCmd {
+				t.Errorf("ActiveCommand = %q, want %q", subcmd, tt.wantCmd)
+			}
+		})
+	}
+}
+
+func TestRunHelp(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantCode int
+	}{
+		{"help command", []string{"help"}, 0},
+		{"help export", []string{"help", "export"}, 0},
+		{"help list", []string{"help", "list"}, 0},
+		{"help view", []string{"help", "view"}, 0},
+		{"help search", []string{"help", "search"}, 0},
+		{"help help", []string{"help", "help"}, 0},
+		{"help unknown", []string{"help", "bogus"}, 1},
+		{"root --help", []string{"--help"}, 0},
+		{"root -h", []string{"-h"}, 0},
+		{"export --help", []string{"export", "--help"}, 0},
+		{"list --help", []string{"list", "--help"}, 0},
+		{"view --help", []string{"view", "--help"}, 0},
+		{"search --help", []string{"search", "--help"}, 0},
+		{"--help export", []string{"--help", "export"}, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code := run(tt.args)
+			if code != tt.wantCode {
+				t.Errorf("run(%v) = %d, want %d", tt.args, code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestRunNoSubcommand(t *testing.T) {
+	code := run([]string{})
+	if code != 1 {
+		t.Errorf("run([]) = %d, want 1", code)
+	}
+}
+
+func TestRunUnknownSubcommand(t *testing.T) {
+	code := run([]string{"bogus"})
+	if code != 1 {
+		t.Errorf("run([bogus]) = %d, want 1", code)
+	}
+}
+
+func TestHandleHelp(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantCode int
+	}{
+		{"no args", nil, 0},
+		{"export", []string{"export"}, 0},
+		{"list", []string{"list"}, 0},
+		{"view", []string{"view"}, 0},
+		{"search", []string{"search"}, 0},
+		{"unknown", []string{"bogus"}, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a minimal parser to simulate subParser
+			var subParser *optargs.Parser
+			if tt.args != nil {
+				subParser = &optargs.Parser{Args: tt.args}
+			}
+			code := handleHelp(subParser)
+			if code != tt.wantCode {
+				t.Errorf("handleHelp(%v) = %d, want %d", tt.args, code, tt.wantCode)
 			}
 		})
 	}
