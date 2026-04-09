@@ -870,54 +870,15 @@ func TestParseGrepArgs(t *testing.T) {
 // Table-driven tests for runGrep (Task 4.4)
 // ---------------------------------------------------------------------------
 
-// makeGrepStore creates a temp store with multiple Chat conversations.
-func makeGrepStore(t *testing.T, convs map[string][]keybase.MsgSummary) string {
-	t.Helper()
-	storeDir := t.TempDir()
-	for name, msgs := range convs {
-		msgsDir := filepath.Join(storeDir, "Chats", name, "messages")
-		if err := os.MkdirAll(msgsDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		for _, msg := range msgs {
-			msgDir := filepath.Join(msgsDir, strconv.Itoa(msg.ID))
-			if err := os.MkdirAll(msgDir, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			data, err := json.Marshal(msg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(msgDir, "message.json"), data, 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	return storeDir
-}
-
-// grepMsg creates a text MsgSummary with the given parameters.
-func grepMsg(id int, sentAt int64, user, body string) keybase.MsgSummary {
-	return keybase.MsgSummary{
-		ID:     id,
-		SentAt: sentAt,
-		Sender: keybase.MsgSender{Username: user, DeviceName: "phone"},
-		Content: keybase.MsgContent{
-			Type: "text",
-			Text: &keybase.TextContent{Body: body},
-		},
-	}
-}
-
 func TestRunGrep(t *testing.T) {
 	baseTime := int64(1718452800) // 2024-06-15 12:00:00 UTC
 	now := time.Unix(baseTime+3600*24, 0)
 
 	t.Run("single conversation match", func(t *testing.T) {
-		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
-				grepMsg(1, baseTime, "alice", "hello world"),
-				grepMsg(2, baseTime+60, "bob", "goodbye"),
+				textMsg(1, baseTime, "alice", "hello world"),
+				textMsg(2, baseTime+60, "bob", "goodbye"),
 			},
 		})
 		var buf bytes.Buffer
@@ -938,12 +899,12 @@ func TestRunGrep(t *testing.T) {
 	})
 
 	t.Run("multi-conversation with separator", func(t *testing.T) {
-		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
-				grepMsg(1, baseTime, "alice", "match here"),
+				textMsg(1, baseTime, "alice", "match here"),
 			},
 			"alice,carol": {
-				grepMsg(1, baseTime, "carol", "match there"),
+				textMsg(1, baseTime, "carol", "match there"),
 			},
 		})
 		var buf bytes.Buffer
@@ -966,13 +927,13 @@ func TestRunGrep(t *testing.T) {
 
 	t.Run("blank line between non-contiguous windows", func(t *testing.T) {
 		// Messages 1,2,3,4,5 — matches at 1 and 5 with no context → two windows.
-		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
-				grepMsg(1, baseTime, "alice", "alpha target"),
-				grepMsg(2, baseTime+60, "bob", "filler one"),
-				grepMsg(3, baseTime+120, "alice", "filler two"),
-				grepMsg(4, baseTime+180, "bob", "filler three"),
-				grepMsg(5, baseTime+240, "alice", "omega target"),
+				textMsg(1, baseTime, "alice", "alpha target"),
+				textMsg(2, baseTime+60, "bob", "filler one"),
+				textMsg(3, baseTime+120, "alice", "filler two"),
+				textMsg(4, baseTime+180, "bob", "filler three"),
+				textMsg(5, baseTime+240, "alice", "omega target"),
 			},
 		})
 		var buf bytes.Buffer
@@ -996,9 +957,9 @@ func TestRunGrep(t *testing.T) {
 	})
 
 	t.Run("verbose mode", func(t *testing.T) {
-		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
-				grepMsg(42, baseTime, "alice", "verbose test"),
+				textMsg(42, baseTime, "alice", "verbose test"),
 			},
 		})
 		var buf bytes.Buffer
@@ -1016,14 +977,14 @@ func TestRunGrep(t *testing.T) {
 	})
 
 	t.Run("count 3 across 2 conversations", func(t *testing.T) {
-		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
-				grepMsg(1, baseTime, "alice", "match 1"),
-				grepMsg(2, baseTime+60, "alice", "match 2"),
+				textMsg(1, baseTime, "alice", "match 1"),
+				textMsg(2, baseTime+60, "alice", "match 2"),
 			},
 			"alice,carol": {
-				grepMsg(1, baseTime, "carol", "match 3"),
-				grepMsg(2, baseTime+60, "carol", "match 4"),
+				textMsg(1, baseTime, "carol", "match 3"),
+				textMsg(2, baseTime+60, "carol", "match 4"),
 			},
 		})
 		var buf bytes.Buffer
@@ -1045,11 +1006,11 @@ func TestRunGrep(t *testing.T) {
 	})
 
 	t.Run("count 0 unlimited", func(t *testing.T) {
-		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
-				grepMsg(1, baseTime, "alice", "match a"),
-				grepMsg(2, baseTime+60, "alice", "match b"),
-				grepMsg(3, baseTime+120, "alice", "match c"),
+				textMsg(1, baseTime, "alice", "match a"),
+				textMsg(2, baseTime+60, "alice", "match b"),
+				textMsg(3, baseTime+120, "alice", "match c"),
 			},
 		})
 		var buf bytes.Buffer
@@ -1070,11 +1031,11 @@ func TestRunGrep(t *testing.T) {
 	})
 
 	t.Run("after/before timestamp filtering", func(t *testing.T) {
-		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
-				grepMsg(1, baseTime, "alice", "match early"),
-				grepMsg(2, baseTime+3600, "alice", "match mid"),
-				grepMsg(3, baseTime+7200, "alice", "match late"),
+				textMsg(1, baseTime, "alice", "match early"),
+				textMsg(2, baseTime+3600, "alice", "match mid"),
+				textMsg(3, baseTime+7200, "alice", "match late"),
 			},
 		})
 		// Only match messages between baseTime+1800 and baseTime+5400.
@@ -1098,10 +1059,10 @@ func TestRunGrep(t *testing.T) {
 	})
 
 	t.Run("glob match", func(t *testing.T) {
-		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
-				grepMsg(1, baseTime, "alice", "we deployed today"),
-				grepMsg(2, baseTime+60, "bob", "sounds good"),
+				textMsg(1, baseTime, "alice", "we deployed today"),
+				textMsg(2, baseTime+60, "bob", "sounds good"),
 			},
 		})
 		var buf bytes.Buffer
@@ -1119,11 +1080,11 @@ func TestRunGrep(t *testing.T) {
 	})
 
 	t.Run("regexp match", func(t *testing.T) {
-		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
-				grepMsg(1, baseTime, "alice", "got an error"),
-				grepMsg(2, baseTime+60, "bob", "err happened"),
-				grepMsg(3, baseTime+120, "alice", "all good"),
+				textMsg(1, baseTime, "alice", "got an error"),
+				textMsg(2, baseTime+60, "bob", "err happened"),
+				textMsg(3, baseTime+120, "alice", "all good"),
 			},
 		})
 		var buf bytes.Buffer
@@ -1144,10 +1105,10 @@ func TestRunGrep(t *testing.T) {
 	})
 
 	t.Run("no matches → empty output", func(t *testing.T) {
-		store := makeGrepStore(t, map[string][]keybase.MsgSummary{
+		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
-				grepMsg(1, baseTime, "alice", "hello"),
-				grepMsg(2, baseTime+60, "bob", "world"),
+				textMsg(1, baseTime, "alice", "hello"),
+				textMsg(2, baseTime+60, "bob", "world"),
 			},
 		})
 		var buf bytes.Buffer

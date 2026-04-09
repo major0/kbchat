@@ -690,50 +690,6 @@ func TestParseListArgs(t *testing.T) {
 	}
 }
 
-// createTestStore builds a temporary store directory with the given
-// conversations and returns the store path. Each conv entry specifies
-// type ("Chat" or "Team"), name, channel (Teams only), and message count.
-func createTestStore(t *testing.T, convs []store.ConvInfo) string {
-	t.Helper()
-	storeDir := t.TempDir()
-
-	for _, conv := range convs {
-		var convDir string
-		switch conv.Type {
-		case "Chat":
-			convDir = filepath.Join(storeDir, "Chats", conv.Name)
-		case "Team":
-			convDir = filepath.Join(storeDir, "Teams", conv.Name, conv.Channel)
-		}
-
-		msgsDir := filepath.Join(convDir, "messages")
-		if err := os.MkdirAll(msgsDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-
-		// Create message directories with message.json files.
-		for i := 1; i <= conv.MsgCount; i++ {
-			msgDir := filepath.Join(msgsDir, strconv.Itoa(i))
-			if err := os.MkdirAll(msgDir, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			msg := keybase.MsgSummary{
-				ID:     i,
-				SentAt: int64(1000000 + i*1000),
-			}
-			data, err := json.Marshal(msg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(msgDir, "message.json"), data, 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-
-	return storeDir
-}
-
 // TestFormatSingleColumn tests single-column output with known inputs.
 func TestFormatSingleColumn(t *testing.T) {
 	tests := []struct {
@@ -860,7 +816,7 @@ func TestRunListOutput(t *testing.T) {
 		{Type: "Chat", Name: "alice,bob", MsgCount: 3},
 		{Type: "Team", Name: "engineering", Channel: "general", MsgCount: 5},
 	}
-	storeDir := createTestStore(t, convs)
+	storeDir := makeConvInfoStore(t, convs)
 
 	// Write a config file pointing to the store.
 	cfgDir := t.TempDir()

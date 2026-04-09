@@ -2,10 +2,9 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -13,81 +12,6 @@ import (
 	"github.com/major0/kbchat/config"
 	"github.com/major0/kbchat/keybase"
 )
-
-// makeViewStore creates a temp store with a single Chat conversation
-// containing the given messages. Returns the store path.
-func makeViewStore(t *testing.T, msgs []keybase.MsgSummary) string {
-	t.Helper()
-	storeDir := t.TempDir()
-	convDir := filepath.Join(storeDir, "Chats", "alice,bob")
-	msgsDir := filepath.Join(convDir, "messages")
-	if err := os.MkdirAll(msgsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, msg := range msgs {
-		msgDir := filepath.Join(msgsDir, strconv.Itoa(msg.ID))
-		if err := os.MkdirAll(msgDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		data, err := json.Marshal(msg)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(msgDir, "message.json"), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return storeDir
-}
-
-// makeMultiConvStore creates a temp store with multiple Chat conversations.
-// Each key in the map is a chat name, value is the messages.
-func makeMultiConvStore(t *testing.T, convs map[string][]keybase.MsgSummary) string {
-	t.Helper()
-	storeDir := t.TempDir()
-	for name, msgs := range convs {
-		convDir := filepath.Join(storeDir, "Chats", name)
-		msgsDir := filepath.Join(convDir, "messages")
-		if err := os.MkdirAll(msgsDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		for _, msg := range msgs {
-			msgDir := filepath.Join(msgsDir, strconv.Itoa(msg.ID))
-			if err := os.MkdirAll(msgDir, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			data, err := json.Marshal(msg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(msgDir, "message.json"), data, 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	return storeDir
-}
-
-// testMsgs generates n text messages with sequential IDs and timestamps
-// starting at baseTime, spaced 60 seconds apart.
-func testMsgs(n int, baseTime int64) []keybase.MsgSummary {
-	msgs := make([]keybase.MsgSummary, n)
-	for i := range msgs {
-		msgs[i] = keybase.MsgSummary{
-			ID:     i + 1,
-			SentAt: baseTime + int64(i*60),
-			Sender: keybase.MsgSender{
-				Username:   "alice",
-				DeviceName: "laptop",
-			},
-			Content: keybase.MsgContent{
-				Type: "text",
-				Text: &keybase.TextContent{Body: "message " + strconv.Itoa(i+1)},
-			},
-		}
-	}
-	return msgs
-}
 
 // captureRunView calls runView and captures output.
 // Returns the output string and any error.
@@ -106,12 +30,12 @@ func TestRunView(t *testing.T) {
 	now := time.Unix(baseTime+30*60, 0) // 30 min after first message
 
 	// Create a store with 25 messages for the main conversation.
-	storePath := makeViewStore(t, testMsgs(25, baseTime))
+	storePath := makeTestStoreOneConv(t, textMsgs(25, baseTime))
 
 	// Create a store with multiple conversations for multi-match tests.
-	multiStore := makeMultiConvStore(t, map[string][]keybase.MsgSummary{
-		"alice,bob":   testMsgs(5, baseTime),
-		"alice,carol": testMsgs(5, baseTime),
+	multiStore := makeTestStore(t, map[string][]keybase.MsgSummary{
+		"alice,bob":   textMsgs(5, baseTime),
+		"alice,carol": textMsgs(5, baseTime),
 	})
 
 	// Create an empty store for zero-match tests.
@@ -218,11 +142,11 @@ func TestRunViewTimestampFilters(t *testing.T) {
 			Sender: keybase.MsgSender{Username: "alice", DeviceName: "laptop"},
 			Content: keybase.MsgContent{
 				Type: "text",
-				Text: &keybase.TextContent{Body: "hour " + strconv.Itoa(i)},
+				Text: &keybase.TextContent{Body: fmt.Sprintf("hour %d", i)},
 			},
 		}
 	}
-	storePath := makeViewStore(t, msgs)
+	storePath := makeTestStoreOneConv(t, msgs)
 	// now = end of day + 1 hour
 	now := time.Unix(dayStart+25*3600, 0)
 
@@ -309,7 +233,7 @@ func TestRunViewVerbose(t *testing.T) {
 			Text: &keybase.TextContent{Body: "hello"},
 		},
 	}}
-	storePath := makeViewStore(t, msgs)
+	storePath := makeTestStoreOneConv(t, msgs)
 	now := time.Unix(baseTime+3600, 0)
 
 	output, err := captureRunView(t, []string{"--verbose", "Chats/alice,bob"}, storePath, now)
@@ -329,7 +253,7 @@ func TestRunViewMultiConversation(t *testing.T) {
 	baseTime := int64(1718452800)
 	now := time.Unix(baseTime+3600, 0)
 
-	multiStore := makeMultiConvStore(t, map[string][]keybase.MsgSummary{
+	multiStore := makeTestStore(t, map[string][]keybase.MsgSummary{
 		"alice,bob": {
 			{ID: 1, SentAt: baseTime, Sender: keybase.MsgSender{Username: "alice"},
 				Content: keybase.MsgContent{Type: "text", Text: &keybase.TextContent{Body: "hello from bob chat"}}},
@@ -430,7 +354,7 @@ func TestRunViewMessageFormats(t *testing.T) {
 			Content: keybase.MsgContent{Type: "system"},
 		},
 	}
-	storePath := makeViewStore(t, msgs)
+	storePath := makeTestStoreOneConv(t, msgs)
 	now := time.Unix(baseTime+3600, 0)
 
 	output, err := captureRunView(t, []string{"--count", "0", "Chats/alice,bob"}, storePath, now)

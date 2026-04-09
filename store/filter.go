@@ -1,9 +1,25 @@
 package store
 
 import (
+	"fmt"
 	"path"
+	"sort"
 	"strings"
 )
+
+// ScanAndFilter scans conversations from storePath, applies filters, and
+// returns results sorted by path. An empty filter list returns all conversations.
+func ScanAndFilter(storePath string, filters []string) ([]ConvInfo, error) {
+	convs, err := ScanConversations(storePath)
+	if err != nil {
+		return nil, fmt.Errorf("scanning conversations: %w", err)
+	}
+	convs = FilterConvInfos(convs, filters)
+	sort.Slice(convs, func(i, j int) bool {
+		return ConvInfoPath(convs[i]) < ConvInfoPath(convs[j])
+	})
+	return convs, nil
+}
 
 // FilterConvInfos returns conversations matching the given filters.
 // Filters use the same syntax as export.FilterConversations:

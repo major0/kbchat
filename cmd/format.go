@@ -23,6 +23,20 @@ func parseTimestamp(raw, flagName string, now time.Time) (*time.Time, error) {
 	return &t, nil
 }
 
+// parseTimestampRange parses --after and --before timestamp strings.
+// Returns nil for empty strings. Returns a wrapped error on parse failure.
+func parseTimestampRange(rawAfter, rawBefore string, now time.Time) (*time.Time, *time.Time, error) {
+	after, err := parseTimestamp(rawAfter, "--after", now)
+	if err != nil {
+		return nil, nil, err
+	}
+	before, err := parseTimestamp(rawBefore, "--before", now)
+	if err != nil {
+		return nil, nil, err
+	}
+	return after, before, nil
+}
+
 // FormatMsg formats a single message in IRC-log style.
 // Text messages: [<timestamp>] <<username>> <body>
 // Non-text messages: [<timestamp>] * <username> <type>: <summary>

@@ -104,7 +104,7 @@ Options:
   --count=<n>             Limit total results
   --after=<timestamp>     Filter by start time
   --before=<timestamp>    Filter by end time
-  --verbose               Include message IDs and conversation IDs
+  --verbose               Include message IDs and metadata
   --help                  Show this help message
 `, programName)
 	case "help":

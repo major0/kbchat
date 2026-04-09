@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strconv"
 	"time"
 
@@ -46,14 +45,8 @@ func resolveQuery(opts viewOpts, now time.Time) (*time.Time, *time.Time, int, bo
 		return &dayStart, &dayEnd, 0, true, nil
 	}
 
-	// Parse --after if set.
-	after, err := parseTimestamp(opts.After, "--after", now)
-	if err != nil {
-		return nil, nil, 0, false, err
-	}
-
-	// Parse --before if set.
-	before, err := parseTimestamp(opts.Before, "--before", now)
+	// Parse --after/--before if set.
+	after, before, err := parseTimestampRange(opts.After, opts.Before, now)
 	if err != nil {
 		return nil, nil, 0, false, err
 	}
@@ -208,21 +201,14 @@ func runView(args []string, cfg *config.Config, w io.Writer, now time.Time) erro
 		return err
 	}
 
-	// Scan all conversations once.
-	allConvs, err := store.ScanConversations(cfg.StorePath)
+	// Scan and filter conversations.
+	matches, err := store.ScanAndFilter(cfg.StorePath, opts.Filters)
 	if err != nil {
-		return fmt.Errorf("scanning conversations: %w", err)
+		return err
 	}
-
-	matches := store.FilterConvInfos(allConvs, opts.Filters)
 	if len(matches) == 0 {
 		return errors.New("no matching conversations")
 	}
-
-	// Sort for deterministic output.
-	sort.Slice(matches, func(i, j int) bool {
-		return store.ConvInfoPath(matches[i]) < store.ConvInfoPath(matches[j])
-	})
 
 	multiConv := len(matches) > 1
 	timeFmt := cfg.TimeFmt()

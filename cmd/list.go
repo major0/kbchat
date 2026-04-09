@@ -313,16 +313,10 @@ func readMsgTime(msgsDir string, id int) time.Time {
 	return time.Unix(msg.SentAt, 0)
 }
 
-// convPath returns the relative path for a conversation, matching the
-// on-disk layout: Chats/<name> for Chat, Teams/<team>/<channel> for Team.
-func convPath(conv store.ConvInfo) string {
-	return store.ConvInfoPath(conv)
-}
-
 // formatSingleColumn writes one conversation per line to w.
 func formatSingleColumn(w io.Writer, convs []store.ConvInfo) {
 	for _, conv := range convs {
-		fmt.Fprintln(w, convPath(conv))
+		fmt.Fprintln(w, store.ConvInfoPath(conv))
 	}
 }
 
@@ -337,7 +331,7 @@ func formatColumns(w io.Writer, convs []store.ConvInfo, width int) {
 	paths := make([]string, len(convs))
 	maxLen := 0
 	for i, conv := range convs {
-		paths[i] = convPath(conv)
+		paths[i] = store.ConvInfoPath(conv)
 		if len(paths[i]) > maxLen {
 			maxLen = len(paths[i])
 		}
@@ -507,12 +501,10 @@ func RunList(args []string, cfg *config.Config) error {
 		return err
 	}
 
-	convs, err := store.ScanConversations(cfg.StorePath)
+	convs, err := store.ScanAndFilter(cfg.StorePath, filters)
 	if err != nil {
-		return fmt.Errorf("scanning conversations: %w", err)
+		return err
 	}
-
-	convs = store.FilterConvInfos(convs, filters)
 
 	if len(convs) == 0 {
 		fmt.Fprintln(os.Stderr, "no conversations found")

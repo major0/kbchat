@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -265,29 +264,16 @@ func runGrep(args []string, cfg *config.Config, w io.Writer, now time.Time) erro
 	}
 
 	// Parse --after/--before timestamps.
-	after, err := parseTimestamp(opts.After, "--after", now)
-	if err != nil {
-		return err
-	}
-	before, err := parseTimestamp(opts.Before, "--before", now)
+	after, before, err := parseTimestampRange(opts.After, opts.Before, now)
 	if err != nil {
 		return err
 	}
 
 	// Scan and filter conversations.
-	convs, err := store.ScanConversations(cfg.StorePath)
+	convs, err := store.ScanAndFilter(cfg.StorePath, opts.Filters)
 	if err != nil {
-		return fmt.Errorf("scanning conversations: %w", err)
+		return err
 	}
-
-	if len(opts.Filters) > 0 {
-		convs = store.FilterConvInfos(convs, opts.Filters)
-	}
-
-	// Sort conversations by path for deterministic output.
-	sort.Slice(convs, func(i, j int) bool {
-		return store.ConvInfoPath(convs[i]) < store.ConvInfoPath(convs[j])
-	})
 
 	remaining := opts.Count // 0 = unlimited
 	printed := false
