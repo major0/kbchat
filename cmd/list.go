@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -279,20 +280,53 @@ func convMsgRange(conv store.ConvInfo) (int, int) {
 }
 
 // convTimestamps returns the first and last message timestamps for a conversation.
-// It reads only the min and max message.json files for their sent_at fields.
-// Returns zero times on any read failure.
+// Scans from the lowest ID upward to find the first message with a non-zero
+// sent_at (skipping deleted placeholders). Returns zero times on failure.
 func convTimestamps(conv store.ConvInfo) (time.Time, time.Time) {
-	minID, maxID := convMsgRange(conv)
-	if maxID < 0 {
+	msgsDir := filepath.Join(conv.Dir, "messages")
+	entries, err := os.ReadDir(msgsDir)
+	if err != nil {
 		return time.Time{}, time.Time{}
 	}
 
-	msgsDir := filepath.Join(conv.Dir, "messages")
-	created := readMsgTime(msgsDir, minID)
-	if minID == maxID {
-		return created, created
+	// Collect and sort all numeric IDs.
+	ids := make([]int, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		id, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
 	}
-	return created, readMsgTime(msgsDir, maxID)
+	if len(ids) == 0 {
+		return time.Time{}, time.Time{}
+	}
+	sort.Ints(ids)
+
+	// Scan forward from lowest to find first real timestamp.
+	var created time.Time
+	for _, id := range ids {
+		t := readMsgTime(msgsDir, id)
+		if !t.IsZero() {
+			created = t
+			break
+		}
+	}
+
+	// Scan backward from highest to find last real timestamp.
+	var modified time.Time
+	for i := len(ids) - 1; i >= 0; i-- {
+		t := readMsgTime(msgsDir, ids[i])
+		if !t.IsZero() {
+			modified = t
+			break
+		}
+	}
+
+	return created, modified
 }
 
 // readMsgTime reads a single message.json and returns its sent_at as a time.Time.
