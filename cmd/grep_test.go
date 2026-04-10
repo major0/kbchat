@@ -24,23 +24,17 @@ import (
 // Property-based tests (Task 1.3)
 // ---------------------------------------------------------------------------
 
-// TestPropertyPatternMatching verifies pattern matching correctness.
-// Validates: Requirements 1.3, 1.4, 1.5.
+// TestPropertyPatternMatching verifies regex matching correctness.
 func TestPropertyPatternMatching(t *testing.T) {
 	cfg := &quick.Config{MaxCount: 100}
 
-	// Sub-property: glob literal self-match.
-	// Any non-empty string with glob metacharacters escaped must match itself.
-	t.Run("glob_literal_self_match", func(t *testing.T) {
+	t.Run("self_match", func(t *testing.T) {
 		f := func(s string) bool {
 			if s == "" {
-				return true // skip empty
+				return true
 			}
-			// Escape glob metacharacters so the pattern is a literal.
-			escaped := escapeGlobLiteral(s)
-			matcher, err := compileMatcher(escaped, false, false)
+			matcher, err := compileMatcher(regexp.QuoteMeta(s), false)
 			if err != nil {
-				t.Logf("compileMatcher error for %q: %v", escaped, err)
 				return false
 			}
 			return matcher(s)
@@ -50,49 +44,16 @@ func TestPropertyPatternMatching(t *testing.T) {
 		}
 	})
 
-	// Sub-property: case-insensitive matching.
-	// Upper-cased pattern must match original string with icase=true.
-	// Uses regexp mode to avoid glob escaping issues with Unicode case folding.
 	t.Run("case_insensitive", func(t *testing.T) {
 		f := func(s string) bool {
 			if s == "" {
 				return true
 			}
-			// Use regexp mode with QuoteMeta to avoid glob/Unicode issues.
-			pat := regexp.QuoteMeta(strings.ToUpper(s))
-			matcher, err := compileMatcher(pat, true, true)
+			matcher, err := compileMatcher(regexp.QuoteMeta(strings.ToUpper(s)), true)
 			if err != nil {
 				return false
 			}
 			return matcher(s)
-		}
-		if err := quick.Check(f, cfg); err != nil {
-			t.Error(err)
-		}
-	})
-
-	// Sub-property: regexp mode consistency.
-	// A regexp that matches case-sensitively also matches with icase=true.
-	t.Run("regexp_mode_consistency", func(t *testing.T) {
-		f := func(s string) bool {
-			if s == "" {
-				return true
-			}
-			// Use QuoteMeta to build a valid regexp literal from s.
-			pat := regexp.QuoteMeta(s)
-			matcherCS, err := compileMatcher(pat, true, false)
-			if err != nil {
-				return false
-			}
-			matcherCI, err := compileMatcher(pat, true, true)
-			if err != nil {
-				return false
-			}
-			// If case-sensitive matches, case-insensitive must also match.
-			if matcherCS(s) && !matcherCI(s) {
-				return false
-			}
-			return true
 		}
 		if err := quick.Check(f, cfg); err != nil {
 			t.Error(err)
@@ -155,17 +116,6 @@ func TestPropertyMatchableTypes(t *testing.T) {
 	if err := quick.Check(f, cfg); err != nil {
 		t.Error(err)
 	}
-}
-
-// escapeGlobLiteral escapes glob metacharacters (* and ?) so the string
-// is treated as a literal in glob mode.
-func escapeGlobLiteral(s string) string {
-	// In glob mode, * and ? are special. We escape them by wrapping
-	// in a character class: * → [*], ? → [?].
-	s = strings.ReplaceAll(s, `[`, `[[]`)
-	s = strings.ReplaceAll(s, `*`, `[*]`)
-	s = strings.ReplaceAll(s, `?`, `[?]`)
-	return s
 }
 
 // ---------------------------------------------------------------------------
@@ -301,93 +251,63 @@ func TestMsgBody(t *testing.T) {
 	}
 }
 
-// TestCompileMatcher verifies compileMatcher for glob, regexp, and case modes.
+// TestCompileMatcher verifies compileMatcher for regex and case modes.
 func TestCompileMatcher(t *testing.T) {
 	tests := []struct {
-		name     string
-		pattern  string
-		isRegexp bool
-		icase    bool
-		input    string
-		wantErr  bool
-		want     bool
+		name    string
+		pattern string
+		icase   bool
+		input   string
+		wantErr bool
+		want    bool
 	}{
 		{
-			name:    "glob star matches any string",
-			pattern: "*",
-			input:   "anything at all",
+			name:    "literal substring match",
+			pattern: "hello",
+			input:   "say hello world",
 			want:    true,
 		},
 		{
-			name:    "glob question matches single char",
-			pattern: "h?llo",
+			name:    "no match",
+			pattern: "xyz",
+			input:   "hello world",
+			want:    false,
+		},
+		{
+			name:    "regex alternation",
+			pattern: "error|fail",
+			input:   "got an error",
+			want:    true,
+		},
+		{
+			name:    "regex quantifier",
+			pattern: "hel+o",
 			input:   "hello",
 			want:    true,
 		},
 		{
-			name:    "glob question rejects zero chars",
-			pattern: "h?llo",
-			input:   "hllo",
+			name:    "invalid regex returns error",
+			pattern: "[invalid",
+			wantErr: true,
+		},
+		{
+			name:    "case sensitive no match",
+			pattern: "HELLO",
+			input:   "hello",
 			want:    false,
 		},
 		{
-			name:    "glob literal match",
-			pattern: "exact",
-			input:   "exact",
-			want:    true,
-		},
-		{
-			name:    "glob no match",
-			pattern: "exact",
-			input:   "other",
-			want:    false,
-		},
-		{
-			name:     "regexp valid pattern matches",
-			pattern:  "hel+o",
-			isRegexp: true,
-			input:    "hello",
-			want:     true,
-		},
-		{
-			name:     "regexp invalid pattern returns error",
-			pattern:  "[invalid",
-			isRegexp: true,
-			wantErr:  true,
-		},
-		{
-			name:    "icase glob matches",
+			name:    "case insensitive match",
 			pattern: "HELLO",
 			icase:   true,
 			input:   "hello",
 			want:    true,
 		},
-		{
-			name:     "icase regexp matches",
-			pattern:  "HELLO",
-			isRegexp: true,
-			icase:    true,
-			input:    "hello",
-			want:     true,
-		},
-		{
-			name:    "glob is anchored (full body match)",
-			pattern: "hello",
-			input:   "say hello world",
-			want:    false,
-		},
-		{
-			name:     "regexp is unanchored (substring match)",
-			pattern:  "hello",
-			isRegexp: true,
-			input:    "say hello world",
-			want:     true,
-		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			matcher, err := compileMatcher(tc.pattern, tc.isRegexp, tc.icase)
+			matcher, err := compileMatcher(tc.pattern, tc.icase)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -735,7 +655,7 @@ func TestPropertyGlobalCountLimit(t *testing.T) {
 
 		grepCfg := &config.Config{StorePath: storeDir}
 		var buf bytes.Buffer
-		args := []string{"--count", strconv.Itoa(k), "*match*"}
+		args := []string{"--count", strconv.Itoa(k), "match"}
 		err := runGrep(args, grepCfg, &buf, time.Now())
 		if err != nil {
 			t.Logf("runGrep error: %v", err)
@@ -785,17 +705,12 @@ func TestParseGrepArgs(t *testing.T) {
 			want: &grepOpts{Pattern: "hello"},
 		},
 		{
-			name: "filters + pattern",
+			name: "conversations + pattern",
 			args: []string{"Chats/alice", "Teams/eng/*", "hello"},
 			want: &grepOpts{
-				Filters: []string{"Chats/alice", "Teams/eng/*"},
-				Pattern: "hello",
+				Conversations: []string{"Chats/alice", "Teams/eng/*"},
+				Pattern:       "hello",
 			},
-		},
-		{
-			name: "-E sets Regexp",
-			args: []string{"-E", "err(or)?"},
-			want: &grepOpts{Pattern: "err(or)?", Regexp: true},
 		},
 		{
 			name: "-i sets ICase",
@@ -882,7 +797,7 @@ func TestRunGrep(t *testing.T) {
 			},
 		})
 		var buf bytes.Buffer
-		err := runGrep([]string{"*hello*"}, &config.Config{StorePath: store}, &buf, now)
+		err := runGrep([]string{"hello"}, &config.Config{StorePath: store}, &buf, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -908,7 +823,7 @@ func TestRunGrep(t *testing.T) {
 			},
 		})
 		var buf bytes.Buffer
-		err := runGrep([]string{"*match*"}, &config.Config{StorePath: store}, &buf, now)
+		err := runGrep([]string{"match"}, &config.Config{StorePath: store}, &buf, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -937,7 +852,7 @@ func TestRunGrep(t *testing.T) {
 			},
 		})
 		var buf bytes.Buffer
-		err := runGrep([]string{"-E", "target"}, &config.Config{StorePath: store}, &buf, now)
+		err := runGrep([]string{"target"}, &config.Config{StorePath: store}, &buf, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -963,7 +878,7 @@ func TestRunGrep(t *testing.T) {
 			},
 		})
 		var buf bytes.Buffer
-		err := runGrep([]string{"--verbose", "*verbose*"}, &config.Config{StorePath: store}, &buf, now)
+		err := runGrep([]string{"--verbose", "verbose"}, &config.Config{StorePath: store}, &buf, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -988,7 +903,7 @@ func TestRunGrep(t *testing.T) {
 			},
 		})
 		var buf bytes.Buffer
-		err := runGrep([]string{"--count", "3", "-E", "match"}, &config.Config{StorePath: store}, &buf, now)
+		err := runGrep([]string{"--count", "3", "match"}, &config.Config{StorePath: store}, &buf, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1014,7 +929,7 @@ func TestRunGrep(t *testing.T) {
 			},
 		})
 		var buf bytes.Buffer
-		err := runGrep([]string{"--count", "0", "-E", "match"}, &config.Config{StorePath: store}, &buf, now)
+		err := runGrep([]string{"--count", "0", "match"}, &config.Config{StorePath: store}, &buf, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1042,7 +957,7 @@ func TestRunGrep(t *testing.T) {
 		afterTS := time.Unix(baseTime+1800, 0).Format(time.RFC3339)
 		beforeTS := time.Unix(baseTime+5400, 0).Format(time.RFC3339)
 		var buf bytes.Buffer
-		err := runGrep([]string{"--after", afterTS, "--before", beforeTS, "-E", "match"}, &config.Config{StorePath: store}, &buf, now)
+		err := runGrep([]string{"--after", afterTS, "--before", beforeTS, "match"}, &config.Config{StorePath: store}, &buf, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1058,7 +973,7 @@ func TestRunGrep(t *testing.T) {
 		}
 	})
 
-	t.Run("glob match", func(t *testing.T) {
+	t.Run("regex substring match", func(t *testing.T) {
 		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
 				textMsg(1, baseTime, "alice", "we deployed today"),
@@ -1066,20 +981,20 @@ func TestRunGrep(t *testing.T) {
 			},
 		})
 		var buf bytes.Buffer
-		err := runGrep([]string{"*deploy*"}, &config.Config{StorePath: store}, &buf, now)
+		err := runGrep([]string{"deploy"}, &config.Config{StorePath: store}, &buf, now)
 		if err != nil {
 			t.Fatal(err)
 		}
 		out := buf.String()
 		if !strings.Contains(out, "we deployed today") {
-			t.Errorf("glob *deploy* should match 'we deployed today':\n%s", out)
+			t.Errorf("substring 'deploy' should match 'we deployed today':\n%s", out)
 		}
 		if strings.Contains(out, "sounds good") {
 			t.Errorf("'sounds good' should not match:\n%s", out)
 		}
 	})
 
-	t.Run("regexp match", func(t *testing.T) {
+	t.Run("substring match", func(t *testing.T) {
 		store := makeTestStore(t, map[string][]keybase.MsgSummary{
 			"alice,bob": {
 				textMsg(1, baseTime, "alice", "got an error"),
@@ -1088,7 +1003,7 @@ func TestRunGrep(t *testing.T) {
 			},
 		})
 		var buf bytes.Buffer
-		err := runGrep([]string{"-E", "err(or)?"}, &config.Config{StorePath: store}, &buf, now)
+		err := runGrep([]string{"err"}, &config.Config{StorePath: store}, &buf, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1112,7 +1027,7 @@ func TestRunGrep(t *testing.T) {
 			},
 		})
 		var buf bytes.Buffer
-		err := runGrep([]string{"*zzzzz*"}, &config.Config{StorePath: store}, &buf, now)
+		err := runGrep([]string{"zzzzz"}, &config.Config{StorePath: store}, &buf, now)
 		if err != nil {
 			t.Fatal(err)
 		}

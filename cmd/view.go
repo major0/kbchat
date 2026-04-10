@@ -17,12 +17,12 @@ import (
 
 // viewOpts holds parsed options for the view subcommand.
 type viewOpts struct {
-	Filters []string // conversation filters (glob patterns)
-	Count   int      // default 20; 0 = unlimited
-	After   string   // raw --after value
-	Before  string   // raw --before value
-	Date    string   // raw --date value
-	Verbose bool
+	Conversations []string // conversation selectors (glob patterns)
+	Count         int      // default 20; 0 = unlimited
+	After         string   // raw --after value
+	Before        string   // raw --before value
+	Date          string   // raw --date value
+	Verbose       bool
 }
 
 // resolveQuery resolves raw flag values into a normalized query.
@@ -172,11 +172,11 @@ func parseViewArgs(args []string) (*viewOpts, error) {
 		}
 	}
 
-	// Positional <filter> arguments required.
+	// Positional <conversation> arguments required.
 	if len(p.Args) == 0 {
-		return nil, errors.New("missing required <filter> argument")
+		return nil, errors.New("missing required <conversation> argument")
 	}
-	opts.Filters = p.Args
+	opts.Conversations = p.Args
 
 	return opts, nil
 }
@@ -202,7 +202,7 @@ func runView(args []string, cfg *config.Config, w io.Writer, now time.Time) erro
 	}
 
 	// Scan and filter conversations.
-	matches, err := store.ScanAndFilter(cfg.StorePath, opts.Filters)
+	matches, err := store.ScanAndFilter(cfg.StorePath, opts.Conversations)
 	if err != nil {
 		return err
 	}

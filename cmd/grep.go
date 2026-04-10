@@ -7,7 +7,6 @@ import (
 	"os"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/major0/kbchat/config"
@@ -18,16 +17,15 @@ import (
 
 // grepOpts holds parsed options for the grep subcommand.
 type grepOpts struct {
-	Filters []string // conversation filters (all positional args except last)
-	Pattern string   // last positional arg
-	Regexp  bool     // -E
-	ICase   bool     // -i
-	After   string   // --after raw value
-	Before  string   // --before raw value
-	CtxA    int      // -A (after context lines)
-	CtxB    int      // -B (before context lines)
-	Count   int      // --count; 0 = unlimited
-	Verbose bool
+	Conversations []string // conversation selectors (all positional args except last)
+	Pattern       string   // last positional arg
+	ICase         bool     // -i
+	After         string   // --after raw value
+	Before        string   // --before raw value
+	CtxA          int      // -A (after context lines)
+	CtxB          int      // -B (before context lines)
+	Count         int      // --count; 0 = unlimited
+	Verbose       bool
 }
 
 // parseGrepArgs parses grep-specific flags from args using optargs.
@@ -35,11 +33,6 @@ type grepOpts struct {
 func parseGrepArgs(args []string) (*grepOpts, error) {
 	opts := &grepOpts{}
 
-	regexpFlag := &optargs.Flag{
-		Name:   "regexp",
-		HasArg: optargs.NoArgument,
-		Help:   "Interpret pattern as a regular expression",
-	}
 	icaseFlag := &optargs.Flag{
 		Name:   "i",
 		HasArg: optargs.NoArgument,
@@ -82,14 +75,12 @@ func parseGrepArgs(args []string) (*grepOpts, error) {
 	}
 
 	shortOpts := map[byte]*optargs.Flag{
-		'E': regexpFlag,
 		'i': icaseFlag,
 		'A': ctxAFlag,
 		'B': ctxBFlag,
 		'C': ctxCFlag,
 	}
 	longOpts := map[string]*optargs.Flag{
-		"regexp":  regexpFlag,
 		"count":   countFlag,
 		"after":   afterFlag,
 		"before":  beforeFlag,
@@ -106,8 +97,6 @@ func parseGrepArgs(args []string) (*grepOpts, error) {
 			return nil, fmt.Errorf("parsing grep flags: %w", err)
 		}
 		switch opt.Name {
-		case "regexp", "E":
-			opts.Regexp = true
 		case "i":
 			opts.ICase = true
 		case "A":
@@ -148,10 +137,10 @@ func parseGrepArgs(args []string) (*grepOpts, error) {
 		return nil, errors.New("missing required <pattern> argument")
 	}
 
-	// Last positional arg is pattern; preceding args are filters.
+	// Last positional arg is pattern; preceding args are conversation selectors.
 	opts.Pattern = p.Args[len(p.Args)-1]
 	if len(p.Args) > 1 {
-		opts.Filters = p.Args[:len(p.Args)-1]
+		opts.Conversations = p.Args[:len(p.Args)-1]
 	}
 
 	return opts, nil
@@ -183,31 +172,17 @@ func msgBody(msg keybase.MsgSummary) (string, bool) {
 }
 
 // compileMatcher returns a match function for the given pattern.
-// Glob mode (isRegexp=false): converts glob to regexp, anchored for full-body match.
-// Regexp mode (isRegexp=true): uses pattern directly, unanchored (substring match).
-// Case-insensitive (icase=true): prepends (?i) to the compiled regexp.
-func compileMatcher(pattern string, isRegexp, icase bool) (func(string) bool, error) {
-	var rePattern string
-
-	if isRegexp {
-		rePattern = pattern
-	} else {
-		// Escape all regexp metacharacters, then convert glob wildcards.
-		escaped := regexp.QuoteMeta(pattern)
-		escaped = strings.ReplaceAll(escaped, `\*`, `.*`)
-		escaped = strings.ReplaceAll(escaped, `\?`, `.`)
-		rePattern = "^" + escaped + "$"
-	}
-
+// The pattern is always interpreted as a Go regular expression.
+// Case-insensitive (icase=true): prepends (?i) to the pattern.
+func compileMatcher(pattern string, icase bool) (func(string) bool, error) {
+	p := pattern
 	if icase {
-		rePattern = "(?i)" + rePattern
+		p = "(?i)" + p
 	}
-
-	re, err := regexp.Compile(rePattern)
+	re, err := regexp.Compile(p)
 	if err != nil {
-		return nil, fmt.Errorf("compiling pattern %q: %w", pattern, err)
+		return nil, fmt.Errorf("invalid pattern %q: %w", pattern, err)
 	}
-
 	return re.MatchString, nil
 }
 
@@ -258,7 +233,7 @@ func runGrep(args []string, cfg *config.Config, w io.Writer, now time.Time) erro
 		return err
 	}
 
-	matcher, err := compileMatcher(opts.Pattern, opts.Regexp, opts.ICase)
+	matcher, err := compileMatcher(opts.Pattern, opts.ICase)
 	if err != nil {
 		return err
 	}
@@ -270,7 +245,7 @@ func runGrep(args []string, cfg *config.Config, w io.Writer, now time.Time) erro
 	}
 
 	// Scan and filter conversations.
-	convs, err := store.ScanAndFilter(cfg.StorePath, opts.Filters)
+	convs, err := store.ScanAndFilter(cfg.StorePath, opts.Conversations)
 	if err != nil {
 		return err
 	}

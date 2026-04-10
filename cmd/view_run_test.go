@@ -58,7 +58,7 @@ func TestRunView(t *testing.T) {
 			args:    nil,
 			store:   storePath,
 			now:     now,
-			wantErr: "missing required <filter>",
+			wantErr: "missing required <conversation>",
 		},
 		{
 			name:    "zero matches → error",

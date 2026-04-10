@@ -559,12 +559,12 @@ func parseListArgs(args []string) (*listOpts, []string, error) {
 // RunList executes the list subcommand.
 // args contains the remaining arguments after subcommand dispatch.
 func RunList(args []string, cfg *config.Config) error {
-	opts, filters, err := parseListArgs(args)
+	opts, conversations, err := parseListArgs(args)
 	if err != nil {
 		return err
 	}
 
-	convs, err := store.ScanAndFilter(cfg.StorePath, filters)
+	convs, err := store.ScanAndFilter(cfg.StorePath, conversations)
 	if err != nil {
 		return err
 	}

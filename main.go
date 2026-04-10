@@ -38,13 +38,13 @@ Run '%s help <command>' for subcommand-specific usage.
 func subcommandUsage(name string) {
 	switch name {
 	case "export":
-		fmt.Fprintf(os.Stderr, `Usage: %s export [options] [destdir] [filters...]
+		fmt.Fprintf(os.Stderr, `Usage: %s export [options] [destdir] [conversation...]
 
 Export Keybase chat history to a local directory.
 
 Arguments:
-  [destdir]       Destination directory (default: store_path from config)
-  [filters...]    Conversation filters (Chat/<participants> or Team/<team_name>)
+  [destdir]          Destination directory (default: store_path from config)
+  [conversation...]  Conversations to export (glob patterns supported)
 
 Options:
   -P, --parallel=<n>      Number of concurrent workers (default: 4)
@@ -56,12 +56,12 @@ Options:
   --help                  Show this help message
 `, programName)
 	case "list", "ls":
-		fmt.Fprintf(os.Stderr, `Usage: %s list [options] [patterns...]
+		fmt.Fprintf(os.Stderr, `Usage: %s list [options] [conversation...]
 
 List conversations in the export store.
 
 Arguments:
-  [patterns...]   Glob patterns to filter conversations
+  [conversation...]  Conversations to list (glob patterns supported)
 
 Options:
   -1              One conversation per line
@@ -71,12 +71,12 @@ Options:
   --help          Show this help message
 `, programName)
 	case "view":
-		fmt.Fprintf(os.Stderr, `Usage: %s view [options] <filter> [<filter> ...]
+		fmt.Fprintf(os.Stderr, `Usage: %s view [options] <conversation> [<conversation> ...]
 
 View messages from one or more conversations.
 
 Arguments:
-  <filter>    Conversation filter (glob patterns supported)
+  <conversation>  Conversation to view (glob patterns supported)
 
 Options:
   --count=<n>          Number of messages per conversation (default: 20; 0 for all)
@@ -87,16 +87,15 @@ Options:
   --help               Show this help message
 `, programName)
 	case "grep":
-		fmt.Fprintf(os.Stderr, `Usage: %s grep [options] [filters...] <pattern>
+		fmt.Fprintf(os.Stderr, `Usage: %s grep [options] [conversation...] <pattern>
 
 Search messages across conversations.
 
 Arguments:
-  [filters...]    Conversation filters
-  <pattern>       Search pattern (glob by default)
+  [conversation...]  Conversations to search (glob patterns supported)
+  <pattern>          Search pattern (regular expression)
 
 Options:
-  -E, --regexp            Regular expression (Go regexp syntax)
   -i                      Case-insensitive matching
   -A <n>                  Show n messages after each match
   -B <n>                  Show n messages before each match
