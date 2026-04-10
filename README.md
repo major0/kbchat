@@ -18,32 +18,29 @@ Replaces the TypeScript/Deno [keybase-export](https://github.com/eilvelia/keybas
 
 | Command | Description |
 |---------|-------------|
-| `export` | Export Keybase chat history to local store |
-| `list` (alias `ls`) | List conversations in the local store |
-| `view` | Display messages from one or more conversations |
-| `grep` | Search messages across conversations |
+| [`export`](docs/export.md) | Export Keybase chat history to local store |
+| [`list`](docs/list.md) (alias `ls`) | List conversations in the local store |
+| [`view`](docs/view.md) | Display messages from one or more conversations |
+| [`grep`](docs/grep.md) | Search messages across conversations |
 | `help` | Show usage information |
 
 Conversation arguments support glob patterns (`*`, `**`, `?`) matched against the store path. Plain strings also match as prefixes (e.g. `Team/engineering` matches `Team/engineering/general`).
 
 ```sh
-# Export everything
-kbchat export ~/keybase-backup
+# Export everything (uses store_path from config)
+kbchat export
 
-# Export specific conversations
+# Export specific conversations to a custom directory
 kbchat export ~/keybase-backup Chat/alice Team/engineering
 
-# Continuous export every 10 minutes with log file
+# Continuous export with log file
 kbchat export --continuous --interval=10m --log-file=/var/log/kbchat.log
 
-# List conversations (long format shows type, count, size, timestamps)
+# List conversations (long format)
 kbchat list -l
 
-# View last 20 messages from a DM
+# View last 20 messages
 kbchat view Chat/alice
-
-# View messages from a time range
-kbchat view --after '3 days ago' --before yesterday Chat/alice
 
 # Search across all conversations (pattern is a Go regexp)
 kbchat grep 'deploy'
@@ -52,7 +49,7 @@ kbchat grep 'deploy'
 kbchat grep -C 3 Team/engineering 'error|fail'
 ```
 
-Run `kbchat help <command>` for subcommand-specific usage and options.
+See the [docs/](docs/) directory for detailed usage and examples per command.
 
 ## Install
 
